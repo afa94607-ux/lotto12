@@ -68,6 +68,63 @@ class SoundEffects {
     }
   }
 
+  playBowlFlip(stepNumber: number) {
+    if (!this.enabled) return;
+    try {
+      this.init();
+      if (!this.ctx) return;
+      if (this.ctx.state === 'suspended') this.ctx.resume();
+
+      // Escalating pitch chime to build anticipation as each bowl is revealed one by one
+      const baseFreq = 420 + Math.min(stepNumber, 12) * 35;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(baseFreq, this.ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.15, this.ctx.currentTime + 0.1);
+
+      gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.14);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start();
+      osc.stop(this.ctx.currentTime + 0.14);
+    } catch {
+      // ignore
+    }
+  }
+
+  playSuspense() {
+    if (!this.enabled) return;
+    try {
+      this.init();
+      if (!this.ctx) return;
+      if (this.ctx.state === 'suspended') this.ctx.resume();
+
+      // Suspense tension sweep before opening the final Line 3 winning number
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(280, this.ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(560, this.ctx.currentTime + 0.7);
+
+      gain.gain.setValueAtTime(0.12, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.75);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start();
+      osc.stop(this.ctx.currentTime + 0.75);
+    } catch {
+      // ignore
+    }
+  }
+
   playReveal() {
     if (!this.enabled) return;
     try {

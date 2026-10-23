@@ -365,7 +365,8 @@ export default function App() {
   useEffect(() => {
     const timer = setInterval(() => {
       setCountdownSeconds((prev) => {
-        if (prev <= 10 && prev > 1 && !isDrawing) {
+        if (isDrawing) return prev;
+        if (prev <= 10 && prev > 1) {
           sound.playCountdownWarning(prev - 1);
         }
         if (prev <= 1) {
@@ -377,7 +378,7 @@ export default function App() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [activeBets, isDrawing, fastMode, currentRoundNumber]);
+  }, [isDrawing, fastMode, currentRoundNumber]);
 
   // Stage a Bet (Clicking on buttons with currently selected chip)
   const handleAddBet = (
