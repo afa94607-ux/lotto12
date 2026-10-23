@@ -17,8 +17,8 @@
 
 /* Custom crisp scrollbars for dense data grids */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -26,10 +26,35 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #93c5fd;
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #2563eb;
 }
+
+.smooth-scroll-area {
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+.smooth-scroll-area::-webkit-scrollbar {
+  width: 7px;
+}
+
+.smooth-scroll-area::-webkit-scrollbar-track {
+  background: #f8fafc;
+  border-radius: 6px;
+}
+
+.smooth-scroll-area::-webkit-scrollbar-thumb {
+  background: #60a5fa;
+  border-radius: 6px;
+}
+
+.smooth-scroll-area::-webkit-scrollbar-thumb:hover {
+  background: #1d4ed8;
+}
+

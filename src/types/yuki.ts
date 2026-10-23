@@ -48,9 +48,12 @@ export interface BetSlipRecord {
   displayTarget?: string;
   stake: number;
   multiplier: number;
+  potentialPayback?: number;
   result: 'won' | 'lost' | 'pending';
   payout: number;
   winningNumber?: number;
+  wonAnimal?: string;
+  timestamp?: number;
 }
 
 export interface RoundResult {

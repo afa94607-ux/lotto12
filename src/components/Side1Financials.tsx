@@ -1,5 +1,15 @@
-import React, { useState } from 'react';
-import { TrendingUp, History, Clock, Printer, CheckCircle2, XCircle, AlertCircle, X } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import {
+  TrendingUp,
+  History,
+  Clock,
+  Printer,
+  X,
+  ChevronUp,
+  ChevronDown,
+  Trash2,
+  Calendar,
+} from 'lucide-react';
 import { BetSlipRecord, RoundResult } from '../types/yuki';
 
 interface Side1FinancialsProps {
@@ -9,6 +19,7 @@ interface Side1FinancialsProps {
   recentResults: RoundResult[];
   onTopUp: () => void;
   onResetBalance: () => void;
+  onClearBetHistory?: () => void;
   lang: 'km' | 'en';
   currentRoundId?: string;
   currentTimeString?: string;
@@ -16,14 +27,20 @@ interface Side1FinancialsProps {
 
 interface TicketGroup {
   ticketNumber: string;
+  roundId: string;
+  date: string;
+  time: string;
   slips: BetSlipRecord[];
   totalStake: number;
   totalPayout: number;
+  totalPotentialPayback: number;
   isPending: boolean;
+  hasWon: boolean;
 }
 
 interface RoundGroup {
   roundId: string;
+  date: string;
   time: string;
   tickets: TicketGroup[];
 }
@@ -35,15 +52,22 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
   recentResults,
   onTopUp,
   onResetBalance,
+  onClearBetHistory,
   lang,
 }) => {
-  const [betFilter, setBetFilter] = useState<'all' | 'won' | 'lost' | 'pending'>('all');
+  const [betFilter, setBetFilter] = useState<'all' | 'pending' | 'won' | 'lost'>('all');
+  const listScrollRef = useRef<HTMLDivElement>(null);
   const [printModalData, setPrintModalData] = useState<{
     ticketNumber: string;
     roundId: string;
+    date: string;
     time: string;
     slips: BetSlipRecord[];
   } | null>(null);
+
+  const pendingCount = betSlips.filter((s) => s.result === 'pending').length;
+  const wonCount = betSlips.filter((s) => s.result === 'won').length;
+  const lostCount = betSlips.filter((s) => s.result === 'lost').length;
 
   const filteredSlips = betSlips.filter((slip) => {
     if (betFilter === 'all') return true;
@@ -57,15 +81,16 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
   const totalStaked = betSlips.reduce((acc, curr) => acc + curr.stake, 0);
   const netProfit = totalWon - totalStaked;
 
-  // Group bet slips by roundId and ticketNumber matching {A2800126-730B-4CE0-BAD7-414F03771C6C}.png
+  // Group bet slips by roundId and ticketNumber
   const groupedRounds = React.useMemo(() => {
     const rounds: RoundGroup[] = [];
-    const roundMap = new Map<string, { time: string; ticketMap: Map<string, BetSlipRecord[]> }>();
+    const roundMap = new Map<string, { date: string; time: string; ticketMap: Map<string, BetSlipRecord[]> }>();
 
     filteredSlips.forEach((slip) => {
       const rId = slip.roundId;
       if (!roundMap.has(rId)) {
         roundMap.set(rId, {
+          date: slip.date || '2026-10-23',
           time: slip.time,
           ticketMap: new Map(),
         });
@@ -83,17 +108,30 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
       rData.ticketMap.forEach((ticketSlips, tNum) => {
         const totalStake = ticketSlips.reduce((s, b) => s + b.stake, 0);
         const totalPayout = ticketSlips.reduce((s, b) => s + b.payout, 0);
+        const totalPotentialPayback = ticketSlips.reduce(
+          (s, b) => s + (b.potentialPayback || Math.round(b.stake * b.multiplier)),
+          0
+        );
         const isPending = ticketSlips.some((b) => b.result === 'pending');
+        const hasWon = ticketSlips.some((b) => b.result === 'won');
+        const firstSlip = ticketSlips[0];
+
         tickets.push({
           ticketNumber: tNum,
+          roundId: rId,
+          date: firstSlip?.date || rData.date,
+          time: firstSlip?.time || rData.time,
           slips: ticketSlips,
           totalStake,
           totalPayout,
+          totalPotentialPayback,
           isPending,
+          hasWon,
         });
       });
       rounds.push({
         roundId: rId,
+        date: rData.date,
         time: rData.time,
         tickets,
       });
@@ -102,22 +140,33 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
     return rounds;
   }, [filteredSlips]);
 
-  const handlePrintTicket = (ticketNumber: string, slips: BetSlipRecord[], roundId: string, time: string) => {
+  // Smooth scroll helpers
+  const handleScrollStep = (direction: 'up' | 'down') => {
+    if (!listScrollRef.current) return;
+    const delta = direction === 'up' ? -200 : 200;
+    listScrollRef.current.scrollBy({ top: delta, behavior: 'smooth' });
+  };
+
+  const handlePrintTicket = (
+    ticketNumber: string,
+    slips: BetSlipRecord[],
+    roundId: string,
+    date: string,
+    time: string
+  ) => {
     setPrintModalData({
       ticketNumber,
       roundId,
+      date,
       time,
       slips,
     });
   };
 
   return (
-    <div className="flex flex-col gap-3 bg-white border border-slate-200 rounded-lg p-3 shadow-sm h-full overflow-y-auto">
+    <div className="flex flex-col gap-3 bg-white border border-slate-200 rounded-lg p-3 shadow-sm h-full">
       {/* 1. Financial Overview (សមតុល្យទឹកប្រាក់ / លុយដាក់ក្នុងក្ដារ) */}
-      <div
-        className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-col gap-2 max-w-full"
-        style={{ height: '160.5px' }}
-      >
+      <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-col gap-2 shrink-0">
         <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
           <div className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
             <TrendingUp className="w-4 h-4 text-blue-600" />
@@ -193,24 +242,19 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
       </div>
 
       {/* 2. Latest Results Summary (លទ្ធផលចុងក្រោយ ២០ វេន) */}
-      <div
-        className="border border-slate-200 rounded-lg p-2.5 bg-white max-w-full"
-        style={{ height: '168px' }}
-      >
+      <div className="border border-slate-200 rounded-lg p-2.5 bg-white shrink-0">
         <div className="flex items-center justify-between mb-1.5 pb-1 border-b border-slate-200">
           <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
             <Clock className="w-3.5 h-3.5 text-blue-600" />
             <span>{lang === 'km' ? 'លទ្ធផលចុងក្រោយ' : 'Recent Draws'}</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-1.5 py-0.2 rounded font-mono">
-              {recentResults.slice(0, 20).length} វេន
-            </span>
-          </div>
+          <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-1.5 py-0.2 rounded font-mono">
+            {recentResults.slice(0, 20).length} វេន
+          </span>
         </div>
 
         {/* Results list displaying historical draws */}
-        <div className="flex flex-col gap-1 overflow-y-auto max-h-[118px] pr-0.5">
+        <div className="flex flex-col gap-1 overflow-y-auto max-h-[105px] pr-0.5 smooth-scroll-area">
           {recentResults.slice(0, 15).map((r, idx) => (
             <div
               key={`${r.roundId}-${idx}`}
@@ -237,140 +281,277 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
         </div>
       </div>
 
-      {/* 3. Detailed Bet Slips (Exact Replica of {A2800126-730B-4CE0-BAD7-414F03771C6C}.png) */}
-      <div className="border border-slate-200 rounded-lg p-2.5 bg-white flex-1 flex flex-col min-h-[300px]">
-        <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-slate-200">
-          <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-            <History className="w-3.5 h-3.5 text-blue-600" />
-            <span>{lang === 'km' ? 'ប្រវត្តិសំបុត្រភ្នាល់' : 'Bet Slips History'}</span>
-          </div>
+      {/* 3. Clean Bet Slips History - No overlapping text, clean receipt layout, smooth scrolling */}
+      <div className="border border-slate-200 rounded-lg p-2.5 bg-white flex-1 flex flex-col min-h-[380px]">
+        {/* Header Bar */}
+        <div className="flex items-center justify-between pb-2 border-b border-slate-200 mb-2">
           <div className="flex items-center gap-1.5">
-            <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-1.5 py-0.5 rounded font-mono">
-              {betSlips.length} សំបុត្រ
+            <History className="w-4 h-4 text-blue-600" />
+            <h3 className="text-xs font-bold text-slate-800">
+              {lang === 'km' ? 'ប្រវត្តិសំបុត្រភ្នាល់' : 'Bet Slips History'}
+            </h3>
+            <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-1.5 py-0.2 rounded font-mono">
+              {betSlips.length}
             </span>
           </div>
+
+          {/* Quick Actions: Scroll Up/Down & Clear */}
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={() => handleScrollStep('up')}
+              className="p-1 rounded text-slate-500 hover:text-blue-700 hover:bg-slate-100 transition cursor-pointer"
+              title="Scroll Up"
+            >
+              <ChevronUp className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handleScrollStep('down')}
+              className="p-1 rounded text-slate-500 hover:text-blue-700 hover:bg-slate-100 transition cursor-pointer"
+              title="Scroll Down"
+            >
+              <ChevronDown className="w-4 h-4" />
+            </button>
+            {onClearBetHistory && betSlips.length > 0 && (
+              <button
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      lang === 'km'
+                        ? 'តើអ្នកពិតជាចង់សម្អាតប្រវត្តិភ្នាល់ទាំងអស់មែនទេ?'
+                        : 'Clear all bet history?'
+                    )
+                  ) {
+                    onClearBetHistory();
+                  }
+                }}
+                className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer ml-1"
+                title={lang === 'km' ? 'សម្អាតប្រវត្តិ' : 'Clear History'}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Filter Pills */}
-        <div className="flex items-center gap-1 mb-2">
-          {(['all', 'pending', 'won', 'lost'] as const).map((filter) => (
-            <button
-              key={filter}
-              onClick={() => setBetFilter(filter)}
-              className={`px-2 py-0.5 rounded text-[10px] font-semibold capitalize transition cursor-pointer ${
-                betFilter === filter
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {filter === 'all'
+        {/* Filter Segmented Control */}
+        <div className="grid grid-cols-4 gap-1 p-0.5 bg-slate-100 rounded-md mb-2.5 text-center">
+          {(['all', 'pending', 'won', 'lost'] as const).map((filter) => {
+            const count =
+              filter === 'all'
+                ? betSlips.length
+                : filter === 'pending'
+                ? pendingCount
+                : filter === 'won'
+                ? wonCount
+                : lostCount;
+
+            const label =
+              filter === 'all'
                 ? lang === 'km' ? 'ទាំងអស់' : 'All'
                 : filter === 'pending'
-                ? lang === 'km' ? 'រង់ចាំ ???' : 'Pending'
+                ? lang === 'km' ? 'រង់ចាំ' : 'Pending'
                 : filter === 'won'
                 ? lang === 'km' ? 'ឈ្នះ' : 'Won'
-                : lang === 'km' ? 'ចាញ់' : 'Lost'}
-            </button>
-          ))}
+                : lang === 'km' ? 'ចាញ់' : 'Lost';
+
+            return (
+              <button
+                key={filter}
+                onClick={() => setBetFilter(filter)}
+                className={`py-1 px-1 rounded text-[11px] font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                  betFilter === filter
+                    ? 'bg-white text-blue-700 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>{label}</span>
+                <span
+                  className={`text-[9px] px-1 rounded-full ${
+                    betFilter === filter ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Ticket List matching {A2800126-730B-4CE0-BAD7-414F03771C6C}.png */}
-        <div className="flex-1 overflow-y-auto max-h-[380px] flex flex-col gap-2.5 pr-0.5 select-none">
-          {groupedRounds.length === 0 ? (
-            <div className="text-center py-8 text-xs text-slate-400">
-              {lang === 'km'
-                ? 'មិនទាន់មានការភ្នាល់ទេ សូមជ្រើសរើសលេខលើក្ដារដើម្បីភ្នាល់'
-                : 'No bets placed yet. Click on the board to place a bet!'}
+        {/* Smooth Scrollable Container */}
+        <div
+          ref={listScrollRef}
+          className="smooth-scroll-area flex-1 overflow-y-auto space-y-2.5 pr-0.5 max-h-[460px]"
+        >
+          {filteredSlips.length === 0 ? (
+            <div className="text-center py-12 text-xs text-slate-400 flex flex-col items-center gap-2">
+              <History className="w-8 h-8 text-slate-300" />
+              <span>
+                {lang === 'km'
+                  ? 'មិនទាន់មានការភ្នាល់ទេ សូមជ្រើសរើសលេខលើក្ដារដើម្បីភ្នាល់'
+                  : 'No bets placed yet. Click on the board to place a bet!'}
+              </span>
             </div>
           ) : (
             groupedRounds.map((rg) => (
               <div
                 key={rg.roundId}
-                className="border border-slate-200 rounded-md overflow-hidden bg-white shadow-2xs"
+                className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-2xs"
               >
-                {/* Round Header Bar e.g. "1989#374 21:31" */}
-                <div className="bg-[#eef4fc] px-3 py-1.5 font-bold text-slate-900 text-sm font-sans tracking-wide border-b border-slate-200 flex items-center justify-between">
-                  <span>
-                    {rg.roundId} {rg.time}
-                  </span>
+                {/* 1. Round Bar: Round ID on left, Date & Time on right */}
+                <div className="bg-slate-100 px-2.5 py-1.5 border-b border-slate-200 flex items-center justify-between text-xs">
+                  <span className="font-extrabold text-blue-900 font-mono">{rg.roundId}</span>
+                  <div className="text-[11px] text-slate-500 font-mono flex items-center gap-1.5">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-3 h-3 text-slate-400" />
+                      {rg.date}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-slate-400" />
+                      {rg.time}
+                    </span>
+                  </div>
                 </div>
 
-                {/* Tickets list */}
-                <div className="divide-y divide-slate-200">
+                {/* 2. Tickets inside this round */}
+                <div className="divide-y divide-slate-100">
                   {rg.tickets.map((t) => (
-                    <div key={t.ticketNumber} className="p-2 sm:p-2.5 bg-white">
-                      {/* Ticket Number & Blue Print Button */}
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span
-                          onClick={() => handlePrintTicket(t.ticketNumber, t.slips, rg.roundId, rg.time)}
-                          className="text-[#1a73e8] font-bold font-mono text-sm underline underline-offset-2 tracking-wide cursor-pointer hover:text-blue-800"
-                          title="Click to view/print receipt"
-                        >
-                          {t.ticketNumber}
-                        </span>
-                        <button
-                          onClick={() => handlePrintTicket(t.ticketNumber, t.slips, rg.roundId, rg.time)}
-                          className="w-6 h-6 rounded bg-[#1a73e8] hover:bg-blue-700 active:scale-95 text-white flex items-center justify-center shadow-xs transition cursor-pointer"
-                          title="បោះពុម្ពវិក្កយបត្រ (Print Ticket)"
-                        >
-                          <Printer className="w-3.5 h-3.5 stroke-[2.2]" />
-                        </button>
+                    <div key={t.ticketNumber} className="p-2.5 bg-white space-y-2">
+                      {/* Ticket header line */}
+                      <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[11px] text-slate-500 font-medium">
+                            {lang === 'km' ? 'សំបុត្រ:' : 'Ticket:'}
+                          </span>
+                          <button
+                            onClick={() =>
+                              handlePrintTicket(t.ticketNumber, t.slips, t.roundId, t.date, t.time)
+                            }
+                            className="text-blue-600 hover:text-blue-800 font-mono font-bold text-xs underline cursor-pointer"
+                            title="View/Print ticket"
+                          >
+                            #{t.ticketNumber}
+                          </button>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                              t.isPending
+                                ? 'bg-amber-100 text-amber-800'
+                                : t.hasWon
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {t.isPending
+                              ? lang === 'km' ? 'រង់ចាំ' : 'Pending'
+                              : t.hasWon
+                              ? lang === 'km' ? 'ឈ្នះ' : 'Won'
+                              : lang === 'km' ? 'ចាញ់' : 'Lost'}
+                          </span>
+                          <button
+                            onClick={() =>
+                              handlePrintTicket(t.ticketNumber, t.slips, t.roundId, t.date, t.time)
+                            }
+                            className="w-5 h-5 rounded bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition cursor-pointer shadow-2xs"
+                            title="Print receipt"
+                          >
+                            <Printer className="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
 
-                      {/* Ticket Bets */}
-                      <div className="flex flex-col gap-1 text-sm font-sans">
+                      {/* Bet Items List - Stacked Layout to Prevent ANY text overlap */}
+                      <div className="space-y-1.5">
                         {t.slips.map((slip) => {
                           const displayTarget = slip.displayTarget || slip.label;
-                          return (
-                            <div key={slip.id} className="flex items-center">
-                              {/* Left Column: Target Name / Number (e.g. "តូច", "2", "1") */}
-                              <span className="w-14 text-center font-black text-slate-900 font-khmer shrink-0 text-sm sm:text-base">
-                                {displayTarget}
-                              </span>
+                          const potentialPayback =
+                            slip.potentialPayback || Math.round(slip.stake * slip.multiplier);
 
-                              {/* Right Column: Formula & Result */}
-                              <div className="flex items-center font-bold text-slate-900 font-sans tracking-tight text-sm sm:text-base">
-                                <span>
-                                  {slip.stake.toLocaleString()} X {slip.multiplier} ={' '}
+                          return (
+                            <div
+                              key={slip.id}
+                              className={`p-2 rounded-md border text-xs flex flex-col gap-1.5 transition ${
+                                slip.result === 'won'
+                                  ? 'bg-emerald-50/60 border-emerald-200'
+                                  : slip.result === 'lost'
+                                  ? 'bg-slate-50 border-slate-200'
+                                  : 'bg-amber-50/50 border-amber-200'
+                              }`}
+                            >
+                              {/* Row 1: Target Badge on left, Stake & Multiplier on right */}
+                              <div className="flex items-center justify-between gap-2">
+                                <span
+                                  className={`px-2 py-0.5 rounded text-xs font-bold font-khmer shrink-0 shadow-2xs ${
+                                    slip.category === 'number'
+                                      ? 'bg-blue-600 text-white'
+                                      : slip.category === 'big'
+                                      ? 'bg-rose-600 text-white'
+                                      : slip.category === 'small'
+                                      ? 'bg-cyan-600 text-white'
+                                      : 'bg-slate-800 text-white'
+                                  }`}
+                                >
+                                  {displayTarget}
                                 </span>
+
+                                <span className="font-mono text-xs font-bold text-slate-800">
+                                  {slip.stake.toLocaleString()}៛ × {slip.multiplier}
+                                </span>
+                              </div>
+
+                              {/* Row 2: Status label on left, Payback amount on right */}
+                              <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-200/60">
+                                <span className="text-slate-500 font-medium">
+                                  {slip.result === 'pending'
+                                    ? lang === 'km' ? 'រំពឹងសង:' : 'Expected Pay:'
+                                    : slip.result === 'won'
+                                    ? lang === 'km' ? 'ឈ្នះសង:' : 'Payout:'
+                                    : lang === 'km' ? 'លទ្ធផល:' : 'Result:'}
+                                </span>
+
                                 {slip.result === 'pending' ? (
-                                  <span className="text-[#ea4335] font-black ml-1.5 font-mono">
-                                    ???
+                                  <span className="font-mono font-bold text-amber-700 bg-amber-100/80 px-1.5 py-0.2 rounded">
+                                    {potentialPayback.toLocaleString()}៛
                                   </span>
                                 ) : slip.result === 'won' ? (
-                                  <span className="text-[#1a73e8] font-black ml-1.5 font-mono">
-                                    {slip.payout.toLocaleString()}៛
+                                  <span className="font-mono font-extrabold text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded">
+                                    +{slip.payout.toLocaleString()}៛ (#{slip.winningNumber}{' '}
+                                    {slip.wonAnimal || ''})
                                   </span>
                                 ) : (
-                                  <span className="text-slate-400 font-bold ml-1.5 font-mono">
-                                    0៛
+                                  <span className="font-mono text-slate-500">
+                                    0៛ (#{slip.winningNumber} {slip.wonAnimal || ''})
                                   </span>
                                 )}
                               </div>
                             </div>
                           );
                         })}
+                      </div>
 
-                        {/* Summary Line: សរុប 2,000៛ / 22,000៛ */}
-                        {(t.slips.length > 1 || !t.isPending) && (
-                          <div className="flex items-center pt-1 border-t border-slate-100 mt-0.5">
-                            <span className="w-14 text-center font-black text-slate-900 font-khmer shrink-0 text-sm">
-                              សរុប
+                      {/* Ticket Total Summary */}
+                      <div className="pt-1.5 border-t border-slate-200 flex items-center justify-between text-xs font-mono">
+                        <span className="text-slate-700 font-bold font-khmer">
+                          {lang === 'km' ? 'សរុបសំបុត្រ:' : 'Ticket Total:'}
+                        </span>
+                        <div className="flex items-center gap-1.5 font-bold">
+                          <span className="text-slate-800">
+                            {t.totalStake.toLocaleString()}៛
+                          </span>
+                          <span className="text-slate-400">/</span>
+                          {t.isPending ? (
+                            <span className="text-amber-600">
+                              រំពឹង: {t.totalPotentialPayback.toLocaleString()}៛
                             </span>
-                            <div className="font-bold text-slate-900 font-sans text-sm sm:text-base">
-                              <span>{t.totalStake.toLocaleString()}៛ / </span>
-                              {t.isPending ? (
-                                <span className="text-[#ea4335] font-black ml-1 font-mono">
-                                  ???
-                                </span>
-                              ) : (
-                                <span className="text-[#1a73e8] font-black ml-1 font-mono">
-                                  {t.totalPayout.toLocaleString()}៛
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        )}
+                          ) : t.totalPayout > 0 ? (
+                            <span className="text-emerald-600 font-extrabold">
+                              +{t.totalPayout.toLocaleString()}៛
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">0៛</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -400,11 +581,15 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
             <div className="py-2.5 border-b border-dashed border-slate-300 space-y-1">
               <div className="flex justify-between">
                 <span className="text-slate-500">Ticket No:</span>
-                <span className="font-bold text-[#1a73e8]">{printModalData.ticketNumber}</span>
+                <span className="font-bold text-[#1a73e8]">#{printModalData.ticketNumber}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Round ID:</span>
                 <span className="font-bold">{printModalData.roundId}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Date:</span>
+                <span>{printModalData.date}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Time:</span>
@@ -423,14 +608,14 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
                         s.result === 'pending'
                           ? 'text-[#ea4335]'
                           : s.result === 'won'
-                          ? 'text-[#1a73e8]'
+                          ? 'text-emerald-600'
                           : 'text-slate-400'
                       }
                     >
                       {s.result === 'pending'
                         ? '???'
                         : s.result === 'won'
-                        ? `${s.payout.toLocaleString()}៛`
+                        ? `+${s.payout.toLocaleString()}៛`
                         : '0៛'}
                     </b>
                   </span>
@@ -445,7 +630,7 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
                 <span className="text-[#1a73e8]">
                   {printModalData.slips.some((s) => s.result === 'pending')
                     ? '???'
-                    : `${printModalData.slips.reduce((a, b) => a + b.payout, 0).toLocaleString()}៛`}
+                    : `+${printModalData.slips.reduce((a, b) => a + b.payout, 0).toLocaleString()}៛`}
                 </span>
               </span>
             </div>

@@ -19,33 +19,75 @@ const INITIAL_SEED_SLIPS: BetSlipRecord[] = [
     id: 'seed-slip-1',
     ticketNumber: '444444463',
     roundId: '1989#194',
-    date: '2026-10-18',
-    time: '21:28',
+    date: '2026-10-23',
+    time: '21:28:15',
     category: 'number',
-    targetNumber: 1,
-    label: '1',
-    displayTarget: '1',
-    stake: 1000,
+    targetNumber: 5,
+    label: 'លេខ 5 (រោង)',
+    displayTarget: 'លេខ 5 (រោង)',
+    stake: 10000,
     multiplier: 11,
+    potentialPayback: 110000,
     result: 'won',
-    payout: 11000,
-    winningNumber: 1,
+    payout: 110000,
+    winningNumber: 5,
+    wonAnimal: 'រោង',
+    timestamp: Date.now() - 360000,
   },
   {
     id: 'seed-slip-2',
     ticketNumber: '444444463',
     roundId: '1989#194',
-    date: '2026-10-18',
-    time: '21:28',
+    date: '2026-10-23',
+    time: '21:28:15',
+    category: 'big',
+    label: 'ធំ (Big 7-12)',
+    displayTarget: 'ធំ (Big 7-12)',
+    stake: 20000,
+    multiplier: 1.95,
+    potentialPayback: 39000,
+    result: 'lost',
+    payout: 0,
+    winningNumber: 5,
+    wonAnimal: 'រោង',
+    timestamp: Date.now() - 360000,
+  },
+  {
+    id: 'seed-slip-3',
+    ticketNumber: '444444462',
+    roundId: '1989#193',
+    date: '2026-10-23',
+    time: '21:25:04',
+    category: 'small',
+    label: 'តូច (Small 1-6)',
+    displayTarget: 'តូច (Small 1-6)',
+    stake: 5000,
+    multiplier: 1.95,
+    potentialPayback: 9750,
+    result: 'won',
+    payout: 9750,
+    winningNumber: 2,
+    wonAnimal: 'ឆ្លូវ',
+    timestamp: Date.now() - 540000,
+  },
+  {
+    id: 'seed-slip-4',
+    ticketNumber: '444444461',
+    roundId: '1989#192',
+    date: '2026-10-23',
+    time: '21:22:30',
     category: 'number',
     targetNumber: 1,
-    label: '1',
-    displayTarget: '1',
-    stake: 1000,
+    label: 'លេខ 1 (ជូត)',
+    displayTarget: 'លេខ 1 (ជូត)',
+    stake: 2000,
     multiplier: 11,
+    potentialPayback: 22000,
     result: 'won',
-    payout: 11000,
+    payout: 22000,
     winningNumber: 1,
+    wonAnimal: 'ជូត',
+    timestamp: Date.now() - 720000,
   },
 ];
 
@@ -66,23 +108,24 @@ const loadSavedBetSlips = (): BetSlipRecord[] => {
 
 const getDisplayTarget = (category: BetCategory, targetNumber?: number): string => {
   if (category === 'number' && targetNumber !== undefined) {
-    return targetNumber.toString();
+    const item = ZODIAC_ITEMS.find((z) => z.number === targetNumber);
+    return item ? `លេខ ${targetNumber} (${item.khmerName})` : `លេខ ${targetNumber}`;
   }
   switch (category) {
     case 'small':
-      return 'តូច';
+      return 'តូច (Small 1-6)';
     case 'big':
-      return 'ធំ';
+      return 'ធំ (Big 7-12)';
     case 'odd':
-      return 'សេស';
+      return 'សេស (Odd)';
     case 'even':
-      return 'គូ';
+      return 'គូ (Even)';
     case 'red':
-      return 'ក្រហម';
+      return 'ក្រហម (Red)';
     case 'green':
-      return 'បៃតង';
+      return 'បៃតង (Green)';
     case 'blue':
-      return 'ខៀវ';
+      return 'ខៀវ (Blue)';
     default:
       return category;
   }
@@ -117,7 +160,29 @@ export default function App() {
   const [activeBets, setActiveBets] = useState<PlacedBet[]>([]);
   const [lastRoundBets, setLastRoundBets] = useState<PlacedBet[]>([]);
   const [betSlips, setBetSlips] = useState<BetSlipRecord[]>(loadSavedBetSlips);
-  const ticketCounterRef = useRef<number>(444444469);
+  const getInitialTicketCounter = () => {
+    let maxNum = 444444469;
+    try {
+      const saved = localStorage.getItem('yuki_bet_history');
+      if (saved) {
+        const parsed: BetSlipRecord[] = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          for (const s of parsed) {
+            if (s.ticketNumber) {
+              const num = parseInt(s.ticketNumber, 10);
+              if (!isNaN(num) && num > maxNum) {
+                maxNum = num;
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return maxNum;
+  };
+  const ticketCounterRef = useRef<number>(getInitialTicketCounter());
 
   const getNextTicketNumber = () => {
     ticketCounterRef.current += 1;
@@ -254,7 +319,8 @@ export default function App() {
             isWon = true; // 2.95x
           }
 
-          const payout = isWon ? Math.round(slip.stake * slip.multiplier) : 0;
+          const potentialPayback = Math.round(slip.stake * slip.multiplier);
+          const payout = isWon ? potentialPayback : 0;
           if (isWon) {
             roundWonAmount += payout;
           }
@@ -263,7 +329,9 @@ export default function App() {
             ...slip,
             result: isWon ? 'won' : 'lost',
             payout,
+            potentialPayback,
             winningNumber: winNum,
+            wonAnimal: zodiacItem.khmerName,
           };
         }
         return slip;
@@ -335,7 +403,7 @@ export default function App() {
     }));
 
     const now = new Date();
-    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const dateStr = now.toISOString().split('T')[0];
     const displayTarget = getDisplayTarget(category, targetNumber);
 
@@ -365,18 +433,21 @@ export default function App() {
 
     // IMMEDIATELY SAVE & DISPLAY ON LEFT SIDE AS PENDING:
     const ticketNumber = getNextTicketNumber();
+    const potentialPayback = Math.round(selectedChip * multiplier);
     const newSlip: BetSlipRecord = {
       id: `slip-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       ticketNumber,
       roundId,
       date: dateStr,
       time: timeStr,
+      timestamp: now.getTime(),
       category,
       targetNumber,
       label,
       displayTarget,
       stake: selectedChip,
       multiplier,
+      potentialPayback,
       result: 'pending',
       payout: 0,
     };
@@ -405,9 +476,10 @@ export default function App() {
     }));
 
     const now = new Date();
-    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const dateStr = now.toISOString().split('T')[0];
+    const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const dateStr = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
     const displayTarget = getDisplayTarget(target.category, target.targetNumber);
+    const potentialPayback = Math.round(amount * target.multiplier);
 
     setActiveBets((prev) => {
       const existing = prev.find(
@@ -442,12 +514,14 @@ export default function App() {
       roundId,
       date: dateStr,
       time: timeStr,
+      timestamp: now.getTime(),
       category: target.category,
       targetNumber: target.targetNumber,
       label: target.label,
       displayTarget,
       stake: amount,
       multiplier: target.multiplier,
+      potentialPayback,
       result: 'pending',
       payout: 0,
     };
@@ -528,6 +602,7 @@ export default function App() {
       displayTarget: getDisplayTarget(bet.category, bet.targetNumber),
       stake: bet.amount,
       multiplier: bet.multiplier,
+      potentialPayback: Math.round(bet.amount * bet.multiplier),
       result: 'pending',
       payout: 0,
     }));
@@ -551,6 +626,16 @@ export default function App() {
   const handleResetBalance = () => {
     handleClearBets();
     setBalance(200000);
+  };
+
+  // Clear bet history if user explicitly requests
+  const handleClearBetHistory = () => {
+    setBetSlips([]);
+    try {
+      localStorage.removeItem('yuki_bet_history');
+    } catch {
+      // ignore
+    }
   };
 
   const activeBetsTotal = activeBets.reduce((a, b) => a + b.amount, 0);
@@ -586,6 +671,7 @@ export default function App() {
                 recentResults={pastResults}
                 onTopUp={handleTopUp}
                 onResetBalance={handleResetBalance}
+                onClearBetHistory={handleClearBetHistory}
                 lang={lang}
                 currentRoundId={roundId}
                 currentTimeString={currentTimeString}
@@ -668,11 +754,11 @@ export default function App() {
                   <tr>
                     <th className="p-2.5">Date & Time</th>
                     <th className="p-2.5">Round ID</th>
-                    <th className="p-2.5">Bet Type</th>
-                    <th className="p-2.5">Multiplier</th>
-                    <th className="p-2.5">Stake</th>
-                    <th className="p-2.5">Result</th>
-                    <th className="p-2.5">Payout</th>
+                    <th className="p-2.5">Betted Choice / Number</th>
+                    <th className="p-2.5">Bet Amount</th>
+                    <th className="p-2.5">Pay Back Formula</th>
+                    <th className="p-2.5">Status</th>
+                    <th className="p-2.5">Pay Back Payout</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -683,31 +769,51 @@ export default function App() {
                       </td>
                     </tr>
                   ) : (
-                    betSlips.map((slip) => (
-                      <tr key={slip.id} className="hover:bg-slate-50">
-                        <td className="p-2.5 font-mono">{slip.date} {slip.time}</td>
-                        <td className="p-2.5 font-mono font-bold text-blue-600">{slip.roundId}</td>
-                        <td className="p-2.5 font-bold">{slip.label}</td>
-                        <td className="p-2.5 font-mono">{slip.multiplier}x</td>
-                        <td className="p-2.5 font-mono">{slip.stake.toLocaleString()} ៛</td>
-                        <td className="p-2.5">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                              slip.result === 'won'
-                                ? 'bg-emerald-100 text-emerald-800'
+                    betSlips.map((slip) => {
+                      const potential = slip.potentialPayback || Math.round(slip.stake * slip.multiplier);
+                      const display = slip.displayTarget || slip.label;
+                      return (
+                        <tr key={slip.id} className="hover:bg-slate-50">
+                          <td className="p-2.5 font-mono text-slate-600">
+                            {slip.date} {slip.time}
+                          </td>
+                          <td className="p-2.5 font-mono font-bold text-blue-700">{slip.roundId}</td>
+                          <td className="p-2.5 font-bold font-khmer text-slate-900">{display}</td>
+                          <td className="p-2.5 font-mono font-bold text-slate-800">
+                            {slip.stake.toLocaleString()} ៛
+                          </td>
+                          <td className="p-2.5 font-mono text-slate-600">
+                            {slip.stake.toLocaleString()} × {slip.multiplier} = {potential.toLocaleString()} ៛
+                          </td>
+                          <td className="p-2.5">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                slip.result === 'won'
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                  : slip.result === 'lost'
+                                  ? 'bg-slate-100 text-slate-600 border border-slate-200'
+                                  : 'bg-amber-100 text-amber-800 border border-amber-300'
+                              }`}
+                            >
+                              {slip.result === 'won'
+                                ? 'ឈ្នះ (Won)'
                                 : slip.result === 'lost'
-                                ? 'bg-slate-100 text-slate-600'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}
-                          >
-                            {slip.result}
-                          </span>
-                        </td>
-                        <td className="p-2.5 font-mono font-bold text-emerald-600">
-                          {slip.payout > 0 ? `+${slip.payout.toLocaleString()} ៛` : '0 ៛'}
-                        </td>
-                      </tr>
-                    ))
+                                ? 'ចាញ់ (Lost)'
+                                : 'រង់ចាំ (Pending)'}
+                            </span>
+                          </td>
+                          <td className="p-2.5 font-mono font-bold">
+                            {slip.result === 'won' ? (
+                              <span className="text-emerald-700">+{slip.payout.toLocaleString()} ៛</span>
+                            ) : slip.result === 'lost' ? (
+                              <span className="text-slate-400">0 ៛</span>
+                            ) : (
+                              <span className="text-amber-700">រំពឹងសង: {potential.toLocaleString()} ៛</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
