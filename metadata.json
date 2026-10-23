@@ -1,0 +1,8 @@
+{
+  "name": "Yuki 12 ",
+  "description": "Interactive Yuki 12-number lottery gaming platform with 3-side live dashboard, 3-minute draws, bead road history, and Gemini-powered plant identification and care assistant.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
