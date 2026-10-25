@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, Play, FastForward, Clock } from 'lucide-react';
+import { Sparkles, Clock, ShieldCheck } from 'lucide-react';
 import { RoundResult } from '../types/yuki';
 import { GoldenBowl } from './GoldenBowl';
 import { ZodiacCard } from './ZodiacCardArt';
@@ -20,10 +20,7 @@ interface Side2BowlArenaProps {
   activeDrawSequence: ActiveDrawSequence | null;
   lastFinalResult: RoundResult | null;
   pastResults: RoundResult[];
-  onTriggerDrawNow: () => void;
   onRevealComplete: () => void;
-  fastMode: boolean;
-  setFastMode: (fast: boolean) => void;
   lang: 'km' | 'en';
 }
 
@@ -34,10 +31,7 @@ export const Side2BowlArena: React.FC<Side2BowlArenaProps> = ({
   activeDrawSequence,
   lastFinalResult,
   pastResults,
-  onTriggerDrawNow,
   onRevealComplete,
-  fastMode,
-  setFastMode,
   lang,
 }) => {
   const [selectedHistoricalRound, setSelectedHistoricalRound] = useState<RoundResult | null>(null);
@@ -54,13 +48,20 @@ export const Side2BowlArena: React.FC<Side2BowlArenaProps> = ({
 
   // Track the active draw round so the animation sequence runs through to Step 12 without interruption
   const activeDrawIdRef = useRef<string | null>(null);
+  // Set of completed draw keys to strictly prevent duplicate appearance
+  const completedDrawKeysRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (isDrawing && activeDrawSequence) {
-      // Use round ID + timestamp to identify this specific draw run
-      const drawRunKey = `${activeDrawSequence.finalResult.roundId}-${activeDrawSequence.finalResult.number}`;
-      if (activeDrawIdRef.current === drawRunKey) {
-        // Animation for this draw is already scheduled/running, do not restart or interrupt it!
+      // Use round ID + date + winning number to uniquely identify this specific draw run
+      const roundIdStr = activeDrawSequence.finalResult.roundId;
+      const dateStr = activeDrawSequence.finalResult.drawDate || '';
+      const winNum = activeDrawSequence.finalResult.number;
+      const drawRunKey = `${dateStr}__${roundIdStr}__${winNum}`;
+
+      // STRICT USER REQUIREMENT: Result appears strictly ONLY ONCE per 3 minutes!
+      // If already revealed or currently animating, NEVER run again!
+      if (completedDrawKeysRef.current.has(drawRunKey) || activeDrawIdRef.current === drawRunKey) {
         return;
       }
       activeDrawIdRef.current = drawRunKey;
@@ -73,18 +74,34 @@ export const Side2BowlArena: React.FC<Side2BowlArenaProps> = ({
       setRevealedStep(0);
       sound.playBowlShuffle();
 
-      // Uniform timestamp interval: exactly 1500ms across all lines (Line 1, Line 2, Line 3)
-      const interval = fastMode ? 500 : 1500;
-      const celebrationHold = fastMode ? 3500 : 7000;
+      // Timing specifications:
+      // Line 1 (Slots 1–6): Exactly 1200ms per number
+      // Line 2 (Slots 7–11): Exactly 1200ms per number
+      // Line 3 (Slot 12 — Final Winning Result): Opens exactly 1200ms after slot 11
+      const LINE1_SLOT_INTERVAL_MS = 1200; // Exactly 1200ms per number for slots 1-6
+      const LINE2_SLOT_INTERVAL_MS = 1200; // Exactly 1200ms per number for slots 7-11
+      const LINE3_SLOT_INTERVAL_MS = 1200; // Opens exactly 1200ms after slot 11 (slot 12)
+      const celebrationHold = 6000; // Hold final winning result before starting next round
 
-      let currentTime = interval;
-
-      // All 12 numbers reveal at the exact same 1500ms timestamp interval across all lines:
-      // Line 1: steps 1 to 6 (1500ms each)
-      // Line 2: steps 7 to 11 (1500ms each)
-      // Line 3: step 12 (1500ms - exact same timestamp interval!)
+      // Schedule exact reveal time for each slot:
+      // Line 1 (Slots 1–6): Exactly 1200ms per number
+      // Line 2 (Slots 7–11): Exactly 1200ms per number
+      // Line 3 (Slot 12 — Final Winning Result): Opens exactly 1200ms after slot 11
       for (let step = 1; step <= 12; step++) {
         const s = step;
+        let stepDelayMs: number;
+
+        if (s <= 6) {
+          // Line 1 (Slots 1–6): Exactly 1200ms per number
+          stepDelayMs = s * LINE1_SLOT_INTERVAL_MS;
+        } else if (s <= 11) {
+          // Line 2 (Slots 7–11): Exactly 1200ms per number
+          stepDelayMs = 6 * LINE1_SLOT_INTERVAL_MS + (s - 6) * LINE2_SLOT_INTERVAL_MS;
+        } else {
+          // Line 3 (Slot 12 — Final Winning Result): Opens exactly 1200ms after slot 11
+          stepDelayMs = 6 * LINE1_SLOT_INTERVAL_MS + 5 * LINE2_SLOT_INTERVAL_MS + LINE3_SLOT_INTERVAL_MS;
+        }
+
         const tid = setTimeout(() => {
           setRevealedStep(s);
           if (s === 12) {
@@ -92,26 +109,24 @@ export const Side2BowlArena: React.FC<Side2BowlArenaProps> = ({
 
             // Hold display of full results and winning number on the last line
             const completeTid = setTimeout(() => {
+              completedDrawKeysRef.current.add(drawRunKey);
               onRevealCompleteRef.current();
               // Reset to hide while betting for the new round
               setRevealedStep(0);
-              activeDrawIdRef.current = null;
             }, celebrationHold);
             animationTimersRef.current.push(completeTid);
           } else {
             sound.playBowlFlip(s);
           }
-        }, currentTime);
+        }, stepDelayMs);
 
         animationTimersRef.current.push(tid);
-        currentTime += interval;
       }
     } else if (!isDrawing) {
-      // While betting, all results are hide
-      activeDrawIdRef.current = null;
+      // While betting, all results are hidden and bowls closed
       setRevealedStep(0);
     }
-  }, [isDrawing, activeDrawSequence, fastMode]);
+  }, [isDrawing, activeDrawSequence]);
 
   // Clean up timers on unmount
   useEffect(() => {
@@ -134,8 +149,8 @@ export const Side2BowlArena: React.FC<Side2BowlArenaProps> = ({
         <div className="flex items-center gap-2">
           <Clock className="w-4 h-4 text-blue-600 animate-spin" style={{ animationDuration: '6s' }} />
           <div>
-            <span className="font-bold text-blue-900">
-              {lang === 'km' ? 'វេនចេញលទ្ធផលរៀងរាល់ 3 នាទី' : 'Draws Every 3 Minutes'}
+            <span className="font-extrabold text-blue-900 font-khmer">
+              {lang === 'km' ? 'លទ្ធផលថ្មីនឹងចេញរៀងរាល់ 3 នាទីម្តង' : 'New Results Released Every 3 Minutes'}
             </span>
             <span className="text-slate-500 text-[11px] ml-1.5 font-mono">
               ({currentRoundId})
@@ -143,30 +158,22 @@ export const Side2BowlArena: React.FC<Side2BowlArenaProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5">
-          {/* Fast demo mode toggle */}
-          <button
-            onClick={() => setFastMode(!fastMode)}
-            className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold transition border ${
-              fastMode
-                ? 'bg-amber-500 text-white border-amber-600'
-                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-            }`}
-            title="Toggle between 3-minute official timer and 15-second fast demo"
-          >
-            <FastForward className="w-3 h-3" />
-            <span>{fastMode ? (lang === 'km' ? 'តេស្តលឿន (15s)' : 'Fast 15s') : (lang === 'km' ? 'ធម្មតា 3m' : '3-Min')}</span>
-          </button>
-
-          {/* Draw now button for instant testing */}
-          <button
-            onClick={onTriggerDrawNow}
-            disabled={isDrawing}
-            className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-2 py-0.5 rounded text-[10px] font-bold shadow-xs transition"
-          >
-            <Play className="w-2.5 h-2.5 fill-current" />
-            <span>{lang === 'km' ? 'ចេញភ្លាម' : 'Draw Now'}</span>
-          </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 bg-white border border-blue-200 rounded-md px-2.5 py-1 text-xs font-mono font-bold text-blue-900 shadow-xs">
+            <span className="text-amber-500 font-sans">⏱️</span>
+            <span>
+              {lang === 'km'
+                ? '១ វេន / ៣ នាទី (ចេញលទ្ធផលតែ ១ដងប៉ុណ្ណោះក្នុង ៣នាទី)'
+                : '1 Result / 3 Mins (Strictly 1 result per 3-min round)'}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 bg-blue-600 text-white px-2.5 py-1 rounded-md text-xs font-mono font-extrabold shadow-xs">
+            <Clock className="w-3.5 h-3.5 text-blue-200" />
+            <span>
+              {lang === 'km' ? 'រង់ចាំ:' : 'Wait:'}{' '}
+              {Math.floor(countdownSeconds / 60)}:{(countdownSeconds % 60).toString().padStart(2, '0')}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -223,11 +230,16 @@ export const Side2BowlArena: React.FC<Side2BowlArenaProps> = ({
         </div>
 
         {/* LINE 1: 6 Numbers (reveals one by one from first number) */}
-        <div className="flex items-center justify-center gap-2 sm:gap-2.5 w-full mb-2 z-10">
+        <div
+          className="flex items-center justify-center gap-2 sm:gap-2.5 mb-2 z-10 max-w-full"
+          style={{ height: '92px', width: '502.656px' }}
+        >
           {line1Cards.map((num, idx) => {
             const stepNum = idx + 1;
             const isRevealed = revealedStep >= stepNum;
             const isJustRevealed = isDrawing && revealedStep === stepNum;
+            const line1SlotStyle: React.CSSProperties = { width: '88px', height: '88px' };
+
             return (
               <div
                 key={`line1-card-${idx}`}
@@ -237,10 +249,10 @@ export const Side2BowlArena: React.FC<Side2BowlArenaProps> = ({
               >
                 {isRevealed ? (
                   <div className="animate-in flip-in-y duration-300">
-                    <ZodiacCard num={num} />
+                    <ZodiacCard num={num} style={line1SlotStyle} />
                   </div>
                 ) : (
-                  <GoldenBowl />
+                  <GoldenBowl style={line1SlotStyle} />
                 )}
               </div>
             );
@@ -248,11 +260,18 @@ export const Side2BowlArena: React.FC<Side2BowlArenaProps> = ({
         </div>
 
         {/* LINE 2: 5 Numbers (reveals one by one) */}
-        <div className="flex items-center justify-center gap-2.5 sm:gap-3 w-full mb-2.5 z-10">
+        <div
+          className="flex items-center justify-center gap-2.5 sm:gap-3 w-full mb-2.5 z-10"
+          style={{ width: '502.641px', height: '105px', fontSize: '19px', fontWeight: 'bold' }}
+        >
           {line2Cards.map((num, idx) => {
             const stepNum = 6 + idx + 1;
             const isRevealed = revealedStep >= stepNum;
             const isJustRevealed = isDrawing && revealedStep === stepNum;
+            const line2SlotStyle: React.CSSProperties = { width: '88px', height: '88px' };
+            const line2NumberStyle: React.CSSProperties | undefined =
+              idx === 0 ? { width: '12.4844px', height: '24px' } : undefined;
+
             return (
               <div
                 key={`line2-card-${idx}`}
@@ -262,10 +281,10 @@ export const Side2BowlArena: React.FC<Side2BowlArenaProps> = ({
               >
                 {isRevealed ? (
                   <div className="animate-in flip-in-y duration-300">
-                    <ZodiacCard num={num} />
+                    <ZodiacCard num={num} style={line2SlotStyle} numberStyle={line2NumberStyle} />
                   </div>
                 ) : (
-                  <GoldenBowl />
+                  <GoldenBowl style={line2SlotStyle} />
                 )}
               </div>
             );
@@ -294,7 +313,7 @@ export const Side2BowlArena: React.FC<Side2BowlArenaProps> = ({
           <div className="transition-all duration-500">
             {revealedStep === 12 ? (
               <div className="animate-in zoom-in-75 duration-400 flex flex-col items-center">
-                <ZodiacCard num={line3Card} isLarge isFinalResult />
+                <ZodiacCard num={line3Card} isLarge isFinalResult style={{ width: '150px', height: '150px' }} />
                 {line3FinalResult && (
                   <div className="mt-1.5 text-center">
                     <span className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-300 px-2 py-0.5 rounded">
@@ -305,7 +324,7 @@ export const Side2BowlArena: React.FC<Side2BowlArenaProps> = ({
               </div>
             ) : (
               <div className={isDrawing && revealedStep >= 10 ? 'animate-bounce' : ''}>
-                <GoldenBowl isLarge />
+                <GoldenBowl isLarge style={{ width: '150px', height: '150px' }} />
               </div>
             )}
           </div>

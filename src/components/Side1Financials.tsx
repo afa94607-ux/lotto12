@@ -9,6 +9,8 @@ import {
   ChevronDown,
   Trash2,
   Calendar,
+  Edit3,
+  Check,
 } from 'lucide-react';
 import { BetSlipRecord, RoundResult } from '../types/yuki';
 
@@ -23,6 +25,11 @@ interface Side1FinancialsProps {
   lang: 'km' | 'en';
   currentRoundId?: string;
   currentTimeString?: string;
+  onViewAllResults?: () => void;
+  onOpenOwnerReport?: () => void;
+  onUpdateSlipNotes?: (slipId: string, notes: string) => void;
+  onDeleteSlip?: (slipId: string) => void;
+  onDeleteTicket?: (ticketNumber: string) => void;
 }
 
 interface TicketGroup {
@@ -54,8 +61,20 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
   onResetBalance,
   onClearBetHistory,
   lang,
+  onViewAllResults,
+  onOpenOwnerReport,
+  onUpdateSlipNotes,
+  onDeleteSlip,
+  onDeleteTicket,
 }) => {
   const [betFilter, setBetFilter] = useState<'all' | 'pending' | 'won' | 'lost'>('all');
+  const [deleteTarget, setDeleteTarget] = useState<{
+    type: 'slip' | 'ticket' | 'all';
+    id: string;
+    label: string;
+  } | null>(null);
+  const [editingSlipId, setEditingSlipId] = useState<string | null>(null);
+  const [editingNoteText, setEditingNoteText] = useState<string>('');
   const listScrollRef = useRef<HTMLDivElement>(null);
   const [printModalData, setPrintModalData] = useState<{
     ticketNumber: string;
@@ -65,21 +84,29 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
     slips: BetSlipRecord[];
   } | null>(null);
 
-  const pendingCount = betSlips.filter((s) => s.result === 'pending').length;
-  const wonCount = betSlips.filter((s) => s.result === 'won').length;
-  const lostCount = betSlips.filter((s) => s.result === 'lost').length;
+  // Slips visible in Bet Slips History: excludes slips deleted from history (they cannot be retrieved or restored here)
+  const visibleSlips = React.useMemo(() => {
+    return betSlips.filter((s) => !s.deletedFromHistory);
+  }, [betSlips]);
 
-  const filteredSlips = betSlips.filter((slip) => {
+  const pendingCount = visibleSlips.filter((s) => s.result === 'pending').length;
+  const wonCount = visibleSlips.filter((s) => s.result === 'won').length;
+  const lostCount = visibleSlips.filter((s) => s.result === 'lost').length;
+
+  const filteredSlips = visibleSlips.filter((slip) => {
     if (betFilter === 'all') return true;
     return slip.result === betFilter;
   });
 
-  const totalWon = betSlips
+  const totalWon = visibleSlips
     .filter((s) => s.result === 'won')
     .reduce((acc, curr) => acc + curr.payout, 0);
 
-  const totalStaked = betSlips.reduce((acc, curr) => acc + curr.stake, 0);
+  const totalStaked = visibleSlips.reduce((acc, curr) => acc + curr.stake, 0);
   const netProfit = totalWon - totalStaked;
+  const ownerWinFromLosses = visibleSlips
+    .filter((s) => s.result === 'lost')
+    .reduce((acc, curr) => acc + curr.stake, 0);
 
   // Group bet slips by roundId and ticketNumber
   const groupedRounds = React.useMemo(() => {
@@ -147,6 +174,23 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
     listScrollRef.current.scrollBy({ top: delta, behavior: 'smooth' });
   };
 
+  const handleStartEditNote = (slipId: string, currentNote?: string) => {
+    setEditingSlipId(slipId);
+    setEditingNoteText(currentNote || '');
+  };
+
+  const handleSaveNote = (slipId: string) => {
+    if (onUpdateSlipNotes) {
+      onUpdateSlipNotes(slipId, editingNoteText);
+    }
+    setEditingSlipId(null);
+  };
+
+  const handleCancelNote = () => {
+    setEditingSlipId(null);
+    setEditingNoteText('');
+  };
+
   const handlePrintTicket = (
     ticketNumber: string,
     slips: BetSlipRecord[],
@@ -204,6 +248,23 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
           </div>
         </div>
 
+        {/* Winnings (Money for Win) Row - Updates whenever any number or bet wins */}
+        <div className="flex items-center justify-between py-1 border-b border-slate-100 bg-emerald-50/70 -mx-1 px-1.5 rounded">
+          <div className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse"></span>
+            <span className="text-xs font-extrabold text-emerald-950 font-khmer flex items-center gap-1">
+              <span>🏆</span>
+              <span>{lang === 'km' ? 'ប្រាក់ឈ្នះសរុប (Winnings)' : 'Winnings (Money for Win)'}</span>
+            </span>
+          </div>
+          <div>
+            <span className="font-mono font-black text-sm text-emerald-700">
+              +{totalWon.toLocaleString()}
+            </span>
+            <span className="text-xs font-bold text-emerald-800 ml-1">៛</span>
+          </div>
+        </div>
+
         {/* Active Bet on Table */}
         <div className="flex items-center justify-between py-1 border-b border-slate-100">
           <div className="flex items-center gap-1.5">
@@ -239,6 +300,28 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
             <span className="text-xs font-bold ml-1 text-slate-600">៛</span>
           </div>
         </div>
+
+        {/* Owner Win from Losses Highlight */}
+        <div className="flex items-center justify-between py-1 border-t border-slate-200/80 bg-emerald-50/70 -mx-3 -mb-3 px-3 rounded-b-lg">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-extrabold text-emerald-900 font-khmer flex items-center gap-1">
+              <span>👑</span>
+              <span>{lang === 'km' ? 'ម្ចាស់ឈ្នះ (សន្លឹកចាញ់)' : 'Owner Win (Losses)'}</span>
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 font-mono font-bold text-xs text-emerald-700">
+            <span>+{ownerWinFromLosses.toLocaleString()} ៛</span>
+            {onOpenOwnerReport && (
+              <button
+                onClick={onOpenOwnerReport}
+                className="text-[10px] text-blue-700 hover:text-blue-900 bg-white border border-blue-200 px-1 rounded font-bold font-khmer transition cursor-pointer"
+                title="View complete owner report"
+              >
+                {lang === 'km' ? 'របាយការណ៍' : 'Report'}
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* 2. Latest Results Summary (លទ្ធផលចុងក្រោយ ២០ វេន) */}
@@ -259,20 +342,36 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
             <div
               key={`${r.roundId}-${idx}`}
               className="flex items-center justify-between text-xs py-0.5 px-2 rounded bg-slate-50 border border-slate-100 font-mono"
+              style={{ width: '273px', height: '24.3281px' }}
             >
               <div className="text-slate-600 text-[11px] font-semibold flex items-center gap-1.5">
-                <span className="text-slate-800 font-bold">{r.roundId}</span>
+                <span
+                  className="text-slate-800 font-bold inline-flex items-center"
+                  style={{ width: '57.3906px', height: '17.6562px', fontSize: '12px' }}
+                >
+                  {r.roundId}
+                </span>
                 <span className="text-slate-400 text-[10px]">{r.drawTime}</span>
               </div>
               <div className="flex items-center gap-1">
                 <span
-                  className={`px-1 py-0.1 rounded text-[9px] font-bold ${
+                  className={`rounded font-bold inline-flex items-center justify-center leading-none ${
                     r.isBig ? 'bg-rose-500 text-white' : 'bg-cyan-500 text-white'
                   }`}
+                  style={{ width: '30.4219px', height: '20px', fontSize: '18px' }}
                 >
                   {r.isBig ? 'ធំ' : 'តូច'}
                 </span>
-                <span className="font-bold text-slate-800 text-[10px] bg-amber-100 text-amber-950 px-1 py-0.1 rounded border border-amber-200">
+                <span
+                  className="bg-amber-100 text-amber-950 rounded border border-amber-200 inline-flex items-center justify-center leading-none truncate"
+                  style={{
+                    width: '84.25px',
+                    height: '23.3281px',
+                    fontSize: '20px',
+                    fontWeight: 'bold',
+                    textAlign: 'center',
+                  }}
+                >
                   #{r.number} {r.khmerName}
                 </span>
               </div>
@@ -291,12 +390,12 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
               {lang === 'km' ? 'ប្រវត្តិសំបុត្រភ្នាល់' : 'Bet Slips History'}
             </h3>
             <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-1.5 py-0.2 rounded font-mono">
-              {betSlips.length}
+              {visibleSlips.length}
             </span>
           </div>
 
-          {/* Quick Actions: Scroll Up/Down & Clear */}
-          <div className="flex items-center gap-0.5">
+          {/* Quick Actions: Scroll Up/Down & Explicit 'Delete All' Option */}
+          <div className="flex items-center gap-1">
             <button
               onClick={() => handleScrollStep('up')}
               className="p-1 rounded text-slate-500 hover:text-blue-700 hover:bg-slate-100 transition cursor-pointer"
@@ -311,23 +410,28 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
             >
               <ChevronDown className="w-4 h-4" />
             </button>
-            {onClearBetHistory && betSlips.length > 0 && (
+            {onClearBetHistory && (
               <button
-                onClick={() => {
-                  if (
-                    window.confirm(
+                onClick={() =>
+                  setDeleteTarget({
+                    type: 'all',
+                    id: 'all',
+                    label:
                       lang === 'km'
-                        ? 'តើអ្នកពិតជាចង់សម្អាតប្រវត្តិភ្នាល់ទាំងអស់មែនទេ?'
-                        : 'Clear all bet history?'
-                    )
-                  ) {
-                    onClearBetHistory();
-                  }
-                }}
-                className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer ml-1"
-                title={lang === 'km' ? 'សម្អាតប្រវត្តិ' : 'Clear History'}
+                        ? `សំបុត្រទាំងអស់ (${visibleSlips.length} សន្លឹក)`
+                        : `All ${visibleSlips.length} bet slips`,
+                  })
+                }
+                disabled={visibleSlips.length === 0}
+                className={`flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded transition cursor-pointer shadow-2xs ml-0.5 ${
+                  visibleSlips.length > 0
+                    ? 'bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-600 hover:text-white'
+                    : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60'
+                }`}
+                title={lang === 'km' ? 'លុបប្រវត្តិសំបុត្រទាំងអស់ក្នុងពេលតែមួយ' : 'Delete all bet slips at once'}
               >
                 <Trash2 className="w-3.5 h-3.5" />
+                <span>{lang === 'km' ? 'លុបទាំងអស់' : 'Delete All'}</span>
               </button>
             )}
           </div>
@@ -338,7 +442,7 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
           {(['all', 'pending', 'won', 'lost'] as const).map((filter) => {
             const count =
               filter === 'all'
-                ? betSlips.length
+                ? visibleSlips.length
                 : filter === 'pending'
                 ? pendingCount
                 : filter === 'won'
@@ -352,7 +456,7 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
                 ? lang === 'km' ? 'រង់ចាំ' : 'Pending'
                 : filter === 'won'
                 ? lang === 'km' ? 'ឈ្នះ' : 'Won'
-                : lang === 'km' ? 'ចាញ់' : 'Lost';
+                : lang === 'km' ? 'មិនឈ្នះ' : 'Did not win';
 
             return (
               <button
@@ -447,7 +551,7 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
                               ? lang === 'km' ? 'រង់ចាំ' : 'Pending'
                               : t.hasWon
                               ? lang === 'km' ? 'ឈ្នះ' : 'Won'
-                              : lang === 'km' ? 'ចាញ់' : 'Lost'}
+                              : lang === 'km' ? 'មិនឈ្នះ' : 'Did not win'}
                           </span>
                           <button
                             onClick={() =>
@@ -458,6 +562,23 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
                           >
                             <Printer className="w-3 h-3" />
                           </button>
+                          {onDeleteTicket && (
+                            <button
+                              onClick={() =>
+                                setDeleteTarget({
+                                  type: 'ticket',
+                                  id: t.ticketNumber,
+                                  label: `#${t.ticketNumber} (${t.slips.length} ${
+                                    lang === 'km' ? 'សន្លឹក' : 'slips'
+                                  })`,
+                                })
+                              }
+                              className="w-5 h-5 rounded bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-600 border border-rose-200 flex items-center justify-center transition cursor-pointer shadow-2xs"
+                              title={lang === 'km' ? 'លុបសំបុត្រនេះចេញពីប្រវត្តិ' : 'Delete ticket from history'}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -478,11 +599,12 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
                                   ? 'bg-slate-50 border-slate-200'
                                   : 'bg-amber-50/50 border-amber-200'
                               }`}
+                              style={{ width: '255px', minHeight: '68.6562px' }}
                             >
                               {/* Row 1: Target Badge on left, Stake & Multiplier on right */}
                               <div className="flex items-center justify-between gap-2">
                                 <span
-                                  className={`px-2 py-0.5 rounded text-xs font-bold font-khmer shrink-0 shadow-2xs ${
+                                  className={`px-2 py-0.5 rounded font-bold font-khmer shrink-0 shadow-2xs inline-flex items-center justify-center truncate ${
                                     slip.category === 'number'
                                       ? 'bg-blue-600 text-white'
                                       : slip.category === 'big'
@@ -491,11 +613,24 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
                                       ? 'bg-cyan-600 text-white'
                                       : 'bg-slate-800 text-white'
                                   }`}
+                                  style={{
+                                    width: '122.0938px',
+                                    height: '26px',
+                                    fontSize: '14px',
+                                    lineHeight: '16px',
+                                  }}
                                 >
                                   {displayTarget}
                                 </span>
 
-                                <span className="font-mono text-xs font-bold text-slate-800">
+                                <span
+                                  className="font-mono font-bold text-slate-800 inline-flex items-center justify-end"
+                                  style={{
+                                    height: '18px',
+                                    width: '99.1406px',
+                                    fontSize: '13px',
+                                  }}
+                                >
                                   {slip.stake.toLocaleString()}៛ × {slip.multiplier}
                                 </span>
                               </div>
@@ -506,7 +641,7 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
                                   {slip.result === 'pending'
                                     ? lang === 'km' ? 'រំពឹងសង:' : 'Expected Pay:'
                                     : slip.result === 'won'
-                                    ? lang === 'km' ? 'ឈ្នះសង:' : 'Payout:'
+                                    ? lang === 'km' ? 'ប្រាក់ឈ្នះ:' : 'Winnings:'
                                     : lang === 'km' ? 'លទ្ធផល:' : 'Result:'}
                                 </span>
 
@@ -515,16 +650,111 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
                                     {potentialPayback.toLocaleString()}៛
                                   </span>
                                 ) : slip.result === 'won' ? (
-                                  <span className="font-mono font-extrabold text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded">
-                                    +{slip.payout.toLocaleString()}៛ (#{slip.winningNumber}{' '}
-                                    {slip.wonAnimal || ''})
+                                  <span className="font-mono font-black text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300">
+                                    +{slip.payout.toLocaleString()} ៛
                                   </span>
                                 ) : (
-                                  <span className="font-mono text-slate-500">
-                                    0៛ (#{slip.winningNumber} {slip.wonAnimal || ''})
+                                  <span className="font-bold text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded text-[11px]">
+                                    {lang === 'km' ? 'មិនឈ្នះ (Did not win)' : 'Did not win'}
                                   </span>
                                 )}
                               </div>
+
+                              {/* Row 3: Notes / Memo - View & Edit directly in Bet Slips History */}
+                              {editingSlipId === slip.id ? (
+                                <div className="pt-1 border-t border-dashed border-slate-200 flex items-center gap-1">
+                                  <input
+                                    type="text"
+                                    autoFocus
+                                    value={editingNoteText}
+                                    onChange={(e) => setEditingNoteText(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') handleSaveNote(slip.id);
+                                      if (e.key === 'Escape') handleCancelNote();
+                                    }}
+                                    placeholder={lang === 'km' ? 'វាយកំណត់ចំណាំ...' : 'Enter note...'}
+                                    className="flex-1 bg-white border border-blue-400 rounded px-1.5 py-0.5 text-[11px] text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-sans"
+                                  />
+                                  <button
+                                    onClick={() => handleSaveNote(slip.id)}
+                                    className="p-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold shadow-xs cursor-pointer"
+                                    title={lang === 'km' ? 'រក្សាទុក' : 'Save'}
+                                  >
+                                    <Check className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    onClick={handleCancelNote}
+                                    className="p-1 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 text-[10px] cursor-pointer"
+                                    title={lang === 'km' ? 'បោះបង់' : 'Cancel'}
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : slip.notes ? (
+                                <div className="pt-1 border-t border-dashed border-slate-200 flex items-center justify-between text-[11px] text-slate-700 bg-amber-50/70 px-1.5 py-0.5 rounded">
+                                  <div className="flex items-center gap-1 truncate max-w-[165px]" title={slip.notes}>
+                                    <span className="text-[10px]">📝</span>
+                                    <span className="font-semibold text-slate-800 truncate">{slip.notes}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    {onUpdateSlipNotes && (
+                                      <button
+                                        onClick={() => handleStartEditNote(slip.id, slip.notes)}
+                                        className="text-slate-400 hover:text-blue-600 p-0.5 rounded transition cursor-pointer"
+                                        title={lang === 'km' ? 'កែប្រែកំណត់ចំណាំ' : 'Edit note'}
+                                      >
+                                        <Edit3 className="w-2.5 h-2.5" />
+                                      </button>
+                                    )}
+                                    {onDeleteSlip && (
+                                      <button
+                                        onClick={() =>
+                                          setDeleteTarget({
+                                            type: 'slip',
+                                            id: slip.id,
+                                            label: `${displayTarget} (${slip.stake.toLocaleString()}៛)`,
+                                          })
+                                        }
+                                        className="text-slate-400 hover:text-rose-600 p-0.5 rounded transition cursor-pointer hover:bg-rose-50"
+                                        title={lang === 'km' ? 'លុបសន្លឹកនេះចេញពីប្រវត្តិ' : 'Delete slip from history'}
+                                      >
+                                        <Trash2 className="w-2.5 h-2.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-between pt-0.5">
+                                  {onUpdateSlipNotes ? (
+                                    <button
+                                      onClick={() => handleStartEditNote(slip.id, '')}
+                                      className="text-[10px] text-slate-400 hover:text-blue-600 flex items-center gap-0.5 transition cursor-pointer"
+                                      title={lang === 'km' ? 'បន្ថែមចំណាំ' : 'Add note'}
+                                    >
+                                      <span>📝</span>
+                                      <span className="font-medium underline decoration-dashed">
+                                        {lang === 'km' ? '+ កំណត់ចំណាំ' : '+ Note'}
+                                      </span>
+                                    </button>
+                                  ) : <div />}
+                                  {onDeleteSlip && (
+                                    <button
+                                      onClick={() =>
+                                        setDeleteTarget({
+                                          type: 'slip',
+                                          id: slip.id,
+                                          label: `${displayTarget} (${slip.stake.toLocaleString()}៛)`,
+                                        })
+                                      }
+                                      className="text-[10px] text-slate-400 hover:text-rose-600 flex items-center gap-0.5 transition cursor-pointer p-0.5 rounded hover:bg-rose-50"
+                                      title={lang === 'km' ? 'លុបសន្លឹកនេះចេញពីប្រវត្តិ' : 'Delete slip from history'}
+                                    >
+                                      <Trash2 className="w-2.5 h-2.5" />
+                                      <span className="text-[9px] font-khmer">{lang === 'km' ? 'លុប' : 'Delete'}</span>
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -541,15 +771,17 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
                           </span>
                           <span className="text-slate-400">/</span>
                           {t.isPending ? (
-                            <span className="text-amber-600">
-                              រំពឹង: {t.totalPotentialPayback.toLocaleString()}៛
+                            <span className="text-amber-600 font-semibold text-[11px]">
+                              {lang === 'km' ? 'រំពឹង:' : 'Exp:'} {t.totalPotentialPayback.toLocaleString()}៛
                             </span>
                           ) : t.totalPayout > 0 ? (
-                            <span className="text-emerald-600 font-extrabold">
-                              +{t.totalPayout.toLocaleString()}៛
+                            <span className="text-emerald-700 font-black bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded text-[11px]">
+                              {lang === 'km' ? 'ប្រាក់ឈ្នះ:' : 'Winnings:'} +{t.totalPayout.toLocaleString()}៛
                             </span>
                           ) : (
-                            <span className="text-slate-400">0៛</span>
+                            <span className="text-rose-600 font-bold bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded text-[11px]">
+                              {lang === 'km' ? 'មិនឈ្នះ (Did not win)' : 'Did not win'}
+                            </span>
                           )}
                         </div>
                       </div>
@@ -599,26 +831,33 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
 
             <div className="py-2.5 border-b border-dashed border-slate-300 space-y-1.5">
               {printModalData.slips.map((s) => (
-                <div key={s.id} className="flex justify-between items-center text-xs">
-                  <span className="font-khmer font-bold">{s.displayTarget || s.label}</span>
-                  <span>
-                    {s.stake.toLocaleString()} X {s.multiplier} ={' '}
-                    <b
-                      className={
-                        s.result === 'pending'
-                          ? 'text-[#ea4335]'
+                <div key={s.id} className="flex flex-col gap-0.5 text-xs">
+                  <div className="flex justify-between items-center">
+                    <span className="font-khmer font-bold">{s.displayTarget || s.label}</span>
+                    <span>
+                      {s.stake.toLocaleString()} X {s.multiplier} ={' '}
+                      <b
+                        className={
+                          s.result === 'pending'
+                            ? 'text-[#ea4335]'
+                            : s.result === 'won'
+                            ? 'text-emerald-600 font-black'
+                            : 'text-rose-600 font-bold'
+                        }
+                      >
+                        {s.result === 'pending'
+                          ? '???'
                           : s.result === 'won'
-                          ? 'text-emerald-600'
-                          : 'text-slate-400'
-                      }
-                    >
-                      {s.result === 'pending'
-                        ? '???'
-                        : s.result === 'won'
-                        ? `+${s.payout.toLocaleString()}៛`
-                        : '0៛'}
-                    </b>
-                  </span>
+                          ? `+${s.payout.toLocaleString()}៛ (${lang === 'km' ? 'សងពេញ' : 'Full Payback'})`
+                          : lang === 'km' ? 'មិនឈ្នះ (Did not win)' : 'Did not win'}
+                      </b>
+                    </span>
+                  </div>
+                  {s.notes && (
+                    <div className="text-[10px] text-slate-500 italic pl-1">
+                      📝 {s.notes}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -630,7 +869,9 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
                 <span className="text-[#1a73e8]">
                   {printModalData.slips.some((s) => s.result === 'pending')
                     ? '???'
-                    : `+${printModalData.slips.reduce((a, b) => a + b.payout, 0).toLocaleString()}៛`}
+                    : printModalData.slips.some((s) => s.result === 'won')
+                    ? `+${printModalData.slips.reduce((a, b) => a + b.payout, 0).toLocaleString()}៛ (${lang === 'km' ? 'សងពេញ' : 'Full Payback'})`
+                    : lang === 'km' ? 'មិនឈ្នះ (Did not win)' : 'Did not win'}
                 </span>
               </span>
             </div>
@@ -650,6 +891,96 @@ export const Side1Financials: React.FC<Side1FinancialsProps> = ({
                 className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg font-bold cursor-pointer"
               >
                 បិទ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal: Supports Slip, Ticket, and All - Non-restorable in History, Preserved in Win/Loss */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 animate-in fade-in">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-300 max-w-sm w-full p-4 font-sans text-slate-800">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+              <div className="flex items-center gap-2 text-rose-600">
+                <Trash2 className="w-5 h-5 text-rose-600" />
+                <h4 className="font-black text-sm font-khmer">
+                  {deleteTarget.type === 'slip'
+                    ? lang === 'km'
+                      ? 'លុបសន្លឹកភ្នាល់ចេញពីប្រវត្តិ'
+                      : 'Delete Bet Slip from History'
+                    : deleteTarget.type === 'ticket'
+                    ? lang === 'km'
+                      ? 'លុបសំបុត្រចេញពីប្រវត្តិ'
+                      : 'Delete Ticket from History'
+                    : lang === 'km'
+                    ? 'លុបប្រវត្តិសំបុត្រភ្នាល់ទាំងអស់'
+                    : 'Delete All Bet Slips History'}
+                </h4>
+              </div>
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer p-1 rounded hover:bg-slate-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="py-3 text-xs space-y-2.5">
+              <p className="text-slate-700 font-medium leading-relaxed font-khmer">
+                {deleteTarget.type === 'slip'
+                  ? lang === 'km'
+                    ? `តើអ្នកពិតជាចង់លុបសន្លឹកភ្នាល់ "${deleteTarget.label}" ចេញពីប្រវត្តិសំបុត្រភ្នាល់មែនទេ?`
+                    : `Are you sure you want to delete bet slip "${deleteTarget.label}" from Bet Slips History?`
+                  : deleteTarget.type === 'ticket'
+                  ? lang === 'km'
+                    ? `តើអ្នកពិតជាចង់លុបសំបុត្រ "${deleteTarget.label}" ចេញពីប្រវត្តិសំបុត្រភ្នាល់មែនទេ?`
+                    : `Are you sure you want to delete ticket "${deleteTarget.label}" from Bet Slips History?`
+                  : lang === 'km'
+                  ? `តើអ្នកពិតជាចង់លុបសំបុត្រទាំងអស់ចំនួន ${visibleSlips.length} សន្លឹកចេញពីប្រវត្តិភ្នាល់មែនទេ?`
+                  : `Are you sure you want to delete all ${visibleSlips.length} bet slips from Bet Slips History?`}
+              </p>
+
+              <div className="bg-amber-50 border border-amber-300 rounded-lg p-2.5 text-[11px] text-amber-950 font-khmer leading-relaxed space-y-1">
+                <div className="font-bold flex items-center gap-1 text-amber-900">
+                  <span>⚠️</span>
+                  <span>{lang === 'km' ? 'ការព្រមានសំខាន់ (Important Notice)' : 'Important Notice'}</span>
+                </div>
+                <p>
+                  {lang === 'km'
+                    ? '• នៅពេលលុបហើយ សំបុត្រនេះមិនអាចត្រឡប់វិញ ឬស្ដារឡើងវិញដោយស្វ័យប្រវត្តិក្នុងប្រវត្តិនេះបានឡើយ (Cannot be retrieved or restored)។'
+                    : '• Once deleted, this bet slip cannot be retrieved or automatically restored in Bet Slips History.'}
+                </p>
+                <p className="text-emerald-800 font-bold">
+                  {lang === 'km'
+                    ? '• ទិន្នន័យគណនេយ្យទាំងអស់នៅតែត្រូវបានរក្សាទុកជាអចិន្ត្រៃយ៍ក្នុងទំព័រ "ឈ្នះ/ចាញ់" (Win/Loss Page)។'
+                    : '• All data will still be preserved on the "Win/Loss" page.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 flex gap-2">
+              <button
+                onClick={() => {
+                  if (deleteTarget.type === 'slip' && onDeleteSlip) {
+                    onDeleteSlip(deleteTarget.id);
+                  } else if (deleteTarget.type === 'ticket' && onDeleteTicket) {
+                    onDeleteTicket(deleteTarget.id);
+                  } else if (deleteTarget.type === 'all' && onClearBetHistory) {
+                    onClearBetHistory();
+                  }
+                  setDeleteTarget(null);
+                }}
+                className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{lang === 'km' ? 'បាទ/ចាស លុបចេញ' : 'Yes, Delete'}</span>
+              </button>
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-bold cursor-pointer transition font-khmer"
+              >
+                {lang === 'km' ? 'បោះបង់' : 'Cancel'}
               </button>
             </div>
           </div>

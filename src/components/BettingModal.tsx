@@ -8,6 +8,7 @@ export interface BetModalTarget {
   label: string;
   multiplier: number;
   targetNumber?: number;
+  notes?: string;
 }
 
 interface BettingModalProps {
@@ -15,7 +16,7 @@ interface BettingModalProps {
   onClose: () => void;
   target: BetModalTarget | null;
   currentRoundId: string;
-  onConfirmBet: (amount: number, target: BetModalTarget) => void;
+  onConfirmBet: (amount: number, target: BetModalTarget, notes?: string) => void;
   balance: number;
   lang: 'km' | 'en';
 }
@@ -41,6 +42,7 @@ export const BettingModal: React.FC<BettingModalProps> = ({
   lang,
 }) => {
   const [betAmount, setBetAmount] = useState<number>(0);
+  const [notes, setNotes] = useState<string>('');
   const [isSinglePost, setIsSinglePost] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<string>('');
 
@@ -66,6 +68,7 @@ export const BettingModal: React.FC<BettingModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setBetAmount(0);
+      setNotes(target?.notes || '');
     }
   }, [isOpen, target]);
 
@@ -79,6 +82,7 @@ export const BettingModal: React.FC<BettingModalProps> = ({
   const handleClear = () => {
     sound.playChip();
     setBetAmount(0);
+    setNotes('');
   };
 
   const handleBet = () => {
@@ -91,7 +95,7 @@ export const BettingModal: React.FC<BettingModalProps> = ({
       return;
     }
     sound.playChip();
-    onConfirmBet(betAmount, target);
+    onConfirmBet(betAmount, target, notes.trim() || undefined);
     onClose();
   };
 
@@ -215,6 +219,30 @@ export const BettingModal: React.FC<BettingModalProps> = ({
                 បញ្ជូនមួយប៉ុស្តិ៍
               </span>
             </label>
+
+            {/* Additional Notes Field: Can be edited as long as bet has not been placed yet! */}
+            <div className="flex flex-col gap-1 mt-1 pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-800 font-khmer">
+                <span className="flex items-center gap-1 text-slate-700">
+                  <span>📝</span>
+                  <span>{lang === 'km' ? 'កំណត់ចំណាំបន្ថែម (Notes):' : 'Additional Note (Optional):'}</span>
+                </span>
+                <span className="text-[10px] text-blue-600 font-normal">
+                  {lang === 'km' ? 'កែប្រែមុនពេលភ្នាល់' : 'Edit before placing'}
+                </span>
+              </div>
+              <input
+                type="text"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder={
+                  lang === 'km'
+                    ? 'វាយបញ្ចូលកំណត់ចំណាំ (ឧ. ឈ្មោះអ្នកលេង, តុ, សាខា...)'
+                    : 'Enter note (e.g., Player Name, Desk, Branch, Memo)...'
+                }
+                className="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 font-sans"
+              />
+            </div>
           </div>
 
           {/* Bottom Action Buttons: Green ភ្នាល់ (Bet) & Dark Red លុប (Clear) matching photo */}

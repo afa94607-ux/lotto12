@@ -1,8 +1,9 @@
 import React from 'react';
 import { ZODIAC_ITEMS } from '../data/zodiac';
 import { BetCategory } from '../types/yuki';
-import { RotateCcw, Check, ExternalLink } from 'lucide-react';
+import { Volume2 } from 'lucide-react';
 import { BetModalTarget } from './BettingModal';
+import { KHMER_COUNTDOWN_MAP, KHMER_GOODLUCK_MESSAGE } from '../utils/audio';
 
 interface Side3BettingBoardProps {
   countdownSeconds: number;
@@ -30,18 +31,17 @@ export const Side3BettingBoard: React.FC<Side3BettingBoardProps> = ({
   selectedChip: _selectedChip,
   setSelectedChip: _setSelectedChip,
   stagedBets,
-  onAddBet,
+  onAddBet: _onAddBet,
   onOpenBetModal,
-  onClearBets,
-  onDoubleBets,
-  onRebet,
-  onConfirmBets,
-  hasPreviousBets,
-  balance,
+  onClearBets: _onClearBets,
+  onDoubleBets: _onDoubleBets,
+  onRebet: _onRebet,
+  onConfirmBets: _onConfirmBets,
+  hasPreviousBets: _hasPreviousBets,
+  balance: _balance,
   isDrawing,
   lang,
 }) => {
-  const totalStaged = Object.values(stagedBets).reduce((a, b) => a + b, 0);
 
   const handleBetClick = (
     key: string,
@@ -60,17 +60,52 @@ export const Side3BettingBoard: React.FC<Side3BettingBoardProps> = ({
     });
   };
 
+  const isLast10Seconds = countdownSeconds <= 10 && countdownSeconds >= 1;
+  const khmerItem = KHMER_COUNTDOWN_MAP[countdownSeconds];
+
   return (
-    <div className="flex flex-col gap-2.5 bg-white border border-slate-200 rounded-lg p-2.5 shadow-sm h-full overflow-y-auto select-none">
+    <div
+      className="flex flex-col gap-2.5 bg-white border border-slate-200 rounded-lg shadow-sm h-full overflow-y-auto select-none font-bold"
+      style={{
+        width: '530px',
+        paddingLeft: '11px',
+        paddingRight: '11px',
+        paddingTop: '11px',
+        paddingBottom: '50px',
+        fontWeight: 'bold',
+      }}
+    >
       {/* 1. Header Bar: Red Countdown Box & Dark Blue Round Info (matching authentic system) */}
       <div className="flex items-stretch gap-1.5 h-13 shrink-0">
-        {/* Large Red Countdown Box */}
-        <div className="w-20 bg-[#c91818] rounded-md flex flex-col items-center justify-center text-white shadow-xs shrink-0">
-          <span className="text-2xl font-black font-mono leading-none tracking-tight">
-            {countdownSeconds}
-          </span>
-          <span className="text-[9px] font-bold uppercase tracking-wider text-red-200 mt-0.5">
-            {lang === 'km' ? 'វិនាទី' : 'SEC'}
+        {/* Large Red Countdown Box with 10s Khmer audio indicator */}
+        <div
+          className={`w-24 ${
+            isLast10Seconds
+              ? 'bg-gradient-to-br from-red-600 via-rose-600 to-amber-600 ring-2 ring-amber-400 animate-pulse'
+              : 'bg-[#c91818]'
+          } rounded-md flex flex-col items-center justify-center text-white shadow-xs shrink-0 transition-all px-1`}
+        >
+          <div className="flex items-baseline gap-1">
+            <span className="text-2xl font-black font-mono leading-none tracking-tight">
+              {countdownSeconds}
+            </span>
+            {isLast10Seconds && khmerItem && (
+              <span className="text-sm font-extrabold text-amber-300 font-khmer">
+                {khmerItem.numeral}
+              </span>
+            )}
+          </div>
+          <span className="text-[9px] font-bold uppercase tracking-wider text-red-100 mt-0.5 truncate max-w-full">
+            {isLast10Seconds && khmerItem ? (
+              <span className="flex items-center gap-0.5 text-amber-200">
+                <Volume2 className="w-2.5 h-2.5 inline animate-bounce" />
+                {khmerItem.word}
+              </span>
+            ) : countdownSeconds === 0 ? (
+              'ចប់ភ្នាល់'
+            ) : (
+              lang === 'km' ? 'វិនាទី' : 'SEC'
+            )}
           </span>
         </div>
 
@@ -81,7 +116,7 @@ export const Side3BettingBoard: React.FC<Side3BettingBoardProps> = ({
               {currentRoundId}
             </span>
             <span className="text-[10px] text-blue-200">
-              {lang === 'km' ? 'វេនបច្ចុប្បន្ន' : 'Current Round'}
+              {lang === 'km' ? 'វេនបច្ចុប្បន្ន (រៀងរាល់ 3 នាទី)' : 'Current Round (Every 3 mins)'}
             </span>
           </div>
           <div className="text-right">
@@ -96,6 +131,38 @@ export const Side3BettingBoard: React.FC<Side3BettingBoardProps> = ({
         </div>
       </div>
 
+      {/* 10-Second Khmer Voice Countdown Announcement Banner */}
+      {isLast10Seconds && (
+        <div className="bg-gradient-to-r from-red-600 via-amber-600 to-red-600 text-white rounded-md px-3 py-1.5 flex items-center justify-between shadow animate-pulse border border-amber-300">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center">
+              <Volume2 className="w-3.5 h-3.5 text-amber-200" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[11px] font-extrabold text-amber-200">
+                សំឡេងរាប់ថយក្រោយ ១០ វិនាទីចុងក្រោយ (Khmer Voice)
+              </span>
+              <span className="text-[12px] font-bold tracking-wide">
+                {khmerItem?.numeral} ({khmerItem?.word}) — ជិតបិទការចាក់ភ្នាល់!
+              </span>
+            </div>
+          </div>
+          <div className="bg-white/20 backdrop-blur-xs text-white px-2 py-0.5 rounded font-black font-mono text-sm border border-white/30">
+            {countdownSeconds}s
+          </div>
+        </div>
+      )}
+
+      {/* 0-Second Good Luck Announcement */}
+      {countdownSeconds === 0 && (
+        <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 text-white rounded-md px-3 py-2 flex items-center justify-center gap-2 shadow-md border-2 border-amber-300 animate-pulse">
+          <Volume2 className="w-4 h-4 text-amber-200 animate-bounce" />
+          <span className="text-sm font-extrabold text-white font-khmer tracking-wide">
+            {KHMER_GOODLUCK_MESSAGE} (Wish you good luck!)
+          </span>
+        </div>
+      )}
+
       {/* 2. THE TOP MACRO BETTING GRID (Exact Replica of Photo 1) */}
       {/* 5 Equal-height Columns:
           - Col 1: [តូច 1.95] / [សេស 1.95]
@@ -103,19 +170,29 @@ export const Side3BettingBoard: React.FC<Side3BettingBoardProps> = ({
           - Col 3: [ក្រហម | 1 4 7 10 | 2.95]
           - Col 4: [បៃតង | 2 5 8 11 | 2.95]
           - Col 5: [ខៀវ | 3 6 9 12 | 2.95] */}
-      <div className="grid grid-cols-5 gap-1.5 shrink-0 text-white">
+      <div
+        className="grid grid-cols-5 gap-1.5 shrink-0 text-white"
+        style={{ height: '169px', width: '423.344px' }}
+      >
         {/* Column 1: Sky Blue [តូច] top & Orange [សេស] bottom */}
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-1.5" style={{ width: '98.8594px' }}>
           {/* Small: តូច */}
           <button
             onClick={() => handleBetClick('small', 'small', 'តូច', 1.95)}
             disabled={isDrawing}
-            className="flex-1 bg-[#00b4d8] hover:bg-[#0096c7] active:scale-95 disabled:opacity-50 rounded-md py-2.5 px-1 flex flex-col items-center justify-between shadow-xs transition cursor-pointer relative"
+            className="flex-1 bg-[#00b4d8] hover:bg-[#0096c7] active:scale-95 disabled:opacity-50 rounded-md py-2 px-1 flex flex-col items-center justify-between shadow-xs transition cursor-pointer relative"
+            style={{
+              width: '79.8438px',
+              height: '85.5px',
+              paddingTop: '8px',
+              paddingLeft: '4px',
+              fontSize: '16px',
+            }}
           >
-            <span className="font-black text-base sm:text-lg font-khmer leading-none drop-shadow-xs">
+            <span className="font-black text-xl sm:text-2xl font-khmer leading-none drop-shadow-xs">
               តូច
             </span>
-            <span className="bg-white text-slate-900 font-mono font-black text-xs sm:text-sm px-4 py-0.5 rounded-full shadow-xs mt-1.5">
+            <span className="bg-white text-slate-900 font-mono font-black text-sm sm:text-base px-3 py-0.5 rounded-full shadow-xs mt-1">
               1.95
             </span>
             {stagedBets['small'] && (
@@ -129,12 +206,13 @@ export const Side3BettingBoard: React.FC<Side3BettingBoardProps> = ({
           <button
             onClick={() => handleBetClick('odd', 'odd', 'សេស', 1.95)}
             disabled={isDrawing}
-            className="flex-1 bg-[#f97316] hover:bg-[#ea580c] active:scale-95 disabled:opacity-50 rounded-md py-2.5 px-1 flex flex-col items-center justify-between shadow-xs transition cursor-pointer relative"
+            className="flex-1 bg-[#f97316] hover:bg-[#ea580c] active:scale-95 disabled:opacity-50 rounded-md py-2 px-1 flex flex-col items-center justify-between shadow-xs transition cursor-pointer relative"
+            style={{ width: '79.8594px', fontSize: '16px' }}
           >
-            <span className="font-black text-base sm:text-lg font-khmer leading-none drop-shadow-xs">
+            <span className="font-black text-xl sm:text-2xl font-khmer leading-none drop-shadow-xs">
               សេស
             </span>
-            <span className="bg-white text-slate-900 font-mono font-black text-xs sm:text-sm px-4 py-0.5 rounded-full shadow-xs mt-1.5">
+            <span className="bg-white text-slate-900 font-mono font-black text-sm sm:text-base px-3 py-0.5 rounded-full shadow-xs mt-1">
               1.95
             </span>
             {stagedBets['odd'] && (
@@ -151,12 +229,13 @@ export const Side3BettingBoard: React.FC<Side3BettingBoardProps> = ({
           <button
             onClick={() => handleBetClick('big', 'big', 'ធំ', 1.95)}
             disabled={isDrawing}
-            className="flex-1 bg-[#f43f5e] hover:bg-[#e11d48] active:scale-95 disabled:opacity-50 rounded-md py-2.5 px-1 flex flex-col items-center justify-between shadow-xs transition cursor-pointer relative"
+            className="flex-1 bg-[#f43f5e] hover:bg-[#e11d48] active:scale-95 disabled:opacity-50 rounded-md py-2 px-1 flex flex-col items-center justify-between shadow-xs transition cursor-pointer relative"
+            style={{ fontSize: '16px' }}
           >
-            <span className="font-black text-base sm:text-lg font-khmer leading-none drop-shadow-xs">
+            <span className="font-black text-xl sm:text-2xl font-khmer leading-none drop-shadow-xs">
               ធំ
             </span>
-            <span className="bg-white text-slate-900 font-mono font-black text-xs sm:text-sm px-4 py-0.5 rounded-full shadow-xs mt-1.5">
+            <span className="bg-white text-slate-900 font-mono font-black text-sm sm:text-base px-3 py-0.5 rounded-full shadow-xs mt-1">
               1.95
             </span>
             {stagedBets['big'] && (
@@ -170,12 +249,13 @@ export const Side3BettingBoard: React.FC<Side3BettingBoardProps> = ({
           <button
             onClick={() => handleBetClick('even', 'even', 'គូ', 1.95)}
             disabled={isDrawing}
-            className="flex-1 bg-[#f59e0b] hover:bg-[#d97706] active:scale-95 disabled:opacity-50 rounded-md py-2.5 px-1 flex flex-col items-center justify-between shadow-xs transition cursor-pointer relative border-2 border-amber-300 ring-1 ring-red-500/80"
+            className="flex-1 bg-[#f59e0b] hover:bg-[#d97706] active:scale-95 disabled:opacity-50 rounded-md py-2 px-1 flex flex-col items-center justify-between shadow-xs transition cursor-pointer relative border-2 border-amber-300 ring-1 ring-red-500/80"
+            style={{ fontSize: '16px' }}
           >
-            <span className="font-black text-base sm:text-lg font-khmer leading-none drop-shadow-xs">
+            <span className="font-black text-xl sm:text-2xl font-khmer leading-none drop-shadow-xs">
               គូ
             </span>
-            <span className="bg-white text-slate-900 font-mono font-black text-xs sm:text-sm px-4 py-0.5 rounded-full shadow-xs mt-1.5">
+            <span className="bg-white text-slate-900 font-mono font-black text-sm sm:text-base px-3 py-0.5 rounded-full shadow-xs mt-1">
               1.95
             </span>
             {stagedBets['even'] && (
@@ -191,9 +271,10 @@ export const Side3BettingBoard: React.FC<Side3BettingBoardProps> = ({
           onClick={() => handleBetClick('red', 'red', 'ក្រហម', 2.95)}
           disabled={isDrawing}
           className="bg-[#dc2626] hover:bg-[#b91c1c] active:scale-95 disabled:opacity-50 rounded-md p-2 flex flex-col items-center justify-between shadow-xs transition cursor-pointer relative"
+          style={{ fontSize: '16px' }}
         >
           <div className="flex flex-col items-center w-full">
-            <span className="font-black text-base sm:text-lg font-khmer leading-tight drop-shadow-xs">
+            <span className="font-black text-lg sm:text-xl font-khmer leading-tight drop-shadow-xs">
               ក្រហម
             </span>
             {/* White box with numbers 1 4 7 10 */}
@@ -202,7 +283,7 @@ export const Side3BettingBoard: React.FC<Side3BettingBoardProps> = ({
             </div>
           </div>
           {/* White pill with 2.95 */}
-          <span className="bg-white text-slate-900 font-mono font-black text-xs sm:text-sm px-4 py-0.5 rounded-full shadow-xs mt-auto">
+          <span className="bg-white text-slate-900 font-mono font-black text-sm sm:text-base px-3 py-0.5 rounded-full shadow-xs mt-auto">
             2.95
           </span>
           {stagedBets['red'] && (
@@ -217,9 +298,10 @@ export const Side3BettingBoard: React.FC<Side3BettingBoardProps> = ({
           onClick={() => handleBetClick('green', 'green', 'បៃតង', 2.95)}
           disabled={isDrawing}
           className="bg-[#16a34a] hover:bg-[#15803d] active:scale-95 disabled:opacity-50 rounded-md p-2 flex flex-col items-center justify-between shadow-xs transition cursor-pointer relative"
+          style={{ fontSize: '16px' }}
         >
           <div className="flex flex-col items-center w-full">
-            <span className="font-black text-base sm:text-lg font-khmer leading-tight drop-shadow-xs">
+            <span className="font-black text-lg sm:text-xl font-khmer leading-tight drop-shadow-xs">
               បៃតង
             </span>
             {/* White box with numbers 2 5 8 11 */}
@@ -228,7 +310,7 @@ export const Side3BettingBoard: React.FC<Side3BettingBoardProps> = ({
             </div>
           </div>
           {/* White pill with 2.95 */}
-          <span className="bg-white text-slate-900 font-mono font-black text-xs sm:text-sm px-4 py-0.5 rounded-full shadow-xs mt-auto">
+          <span className="bg-white text-slate-900 font-mono font-black text-sm sm:text-base px-3 py-0.5 rounded-full shadow-xs mt-auto">
             2.95
           </span>
           {stagedBets['green'] && (
@@ -243,9 +325,10 @@ export const Side3BettingBoard: React.FC<Side3BettingBoardProps> = ({
           onClick={() => handleBetClick('blue', 'blue', 'ខៀវ', 2.95)}
           disabled={isDrawing}
           className="bg-[#1e3a8a] hover:bg-[#1e40af] active:scale-95 disabled:opacity-50 rounded-md p-2 flex flex-col items-center justify-between shadow-xs transition cursor-pointer relative"
+          style={{ fontSize: '16px' }}
         >
           <div className="flex flex-col items-center w-full">
-            <span className="font-black text-base sm:text-lg font-khmer leading-tight drop-shadow-xs">
+            <span className="font-black text-lg sm:text-xl font-khmer leading-tight drop-shadow-xs">
               ខៀវ
             </span>
             {/* White box with numbers 3 6 9 12 */}
@@ -254,7 +337,7 @@ export const Side3BettingBoard: React.FC<Side3BettingBoardProps> = ({
             </div>
           </div>
           {/* White pill with 2.95 */}
-          <span className="bg-white text-slate-900 font-mono font-black text-xs sm:text-sm px-4 py-0.5 rounded-full shadow-xs mt-auto">
+          <span className="bg-white text-slate-900 font-mono font-black text-sm sm:text-base px-3 py-0.5 rounded-full shadow-xs mt-auto">
             2.95
           </span>
           {stagedBets['blue'] && (
@@ -270,7 +353,17 @@ export const Side3BettingBoard: React.FC<Side3BettingBoardProps> = ({
           - Row 1: Cards 1 (ជូត), 2 (ឆ្លូវ), 3 (ខាល), 4 (ថោះ), 5 (រោង), 6 (ម្សាញ់)
           - Row 2: Cards 7 (មមី), 8 (មមែ), 9 (វក), 10 (រកា), 11 (ច), 12 (កុរ) */}
       <div className="flex-1 flex flex-col">
-        <div className="grid grid-cols-6 gap-1.5 flex-1 max-w-full">
+        <div
+          className="grid grid-cols-6 gap-1.5 flex-1 max-w-full rounded-lg p-1.5"
+          style={{
+            width: '511px',
+            height: '651.5px',
+            paddingBottom: '300px',
+            fontSize: '16px',
+            fontWeight: 'bold',
+            backgroundColor: '#ede8e8',
+          }}
+        >
           {ZODIAC_ITEMS.map((item) => {
             const betKey = `num-${item.number}`;
             const betAmount = stagedBets[betKey] || 0;
@@ -305,8 +398,12 @@ export const Side3BettingBoard: React.FC<Side3BettingBoardProps> = ({
                 {/* Top-Left: Khmer Animal Name in the card's authentic color */}
                 <div className="flex items-start justify-between w-full">
                   <span
-                    className="font-black font-moul leading-none tracking-wide text-xs sm:text-sm drop-shadow-xs"
-                    style={{ color: colorHex }}
+                    className="font-black font-moul tracking-wide drop-shadow-xs"
+                    style={{
+                      color: colorHex,
+                      fontSize: '23px',
+                      lineHeight: '21px',
+                    }}
                   >
                     {item.khmerName}
                   </span>
@@ -315,8 +412,12 @@ export const Side3BettingBoard: React.FC<Side3BettingBoardProps> = ({
                 {/* Bottom Row: Large Number on Bottom-Left & Multiplier 11 on Bottom-Right */}
                 <div className="flex items-end justify-between w-full mt-auto pt-2">
                   <span
-                    className="font-black font-sans leading-none tracking-tight text-2xl sm:text-3xl"
-                    style={{ color: colorHex }}
+                    className="font-black font-sans tracking-tight"
+                    style={{
+                      color: colorHex,
+                      fontSize: '50px',
+                      lineHeight: '51px',
+                    }}
                   >
                     {item.number}
                   </span>
@@ -338,33 +439,6 @@ export const Side3BettingBoard: React.FC<Side3BettingBoardProps> = ({
             );
           })}
         </div>
-      </div>
-
-
-      {/* 5. Betting Action Buttons */}
-      <div className="flex items-center gap-1.5 shrink-0">
-        {/* Rebet Button */}
-        <button
-          onClick={onRebet}
-          disabled={!hasPreviousBets || isDrawing}
-          className="flex-1 bg-slate-200 hover:bg-slate-300 disabled:opacity-40 text-slate-700 py-2 rounded text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
-          title="Repeat last round bets"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          <span>{lang === 'km' ? 'ដដែល' : 'Rebet'}</span>
-        </button>
-
-        {/* Confirm Bet Button (ភ្នាល់) */}
-        <button
-          onClick={onConfirmBets}
-          disabled={totalStaged === 0 || isDrawing || totalStaged > balance}
-          className="flex-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white py-2 px-3 rounded text-xs font-bold shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
-        >
-          <Check className="w-4 h-4" />
-          <span>
-            {lang === 'km' ? 'បញ្ជាក់ភ្នាល់' : 'Confirm'} ({totalStaged.toLocaleString()}៛)
-          </span>
-        </button>
       </div>
     </div>
   );

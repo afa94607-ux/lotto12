@@ -3,11 +3,13 @@ import React from 'react';
 interface GoldenBowlProps {
   className?: string;
   isLarge?: boolean;
+  style?: React.CSSProperties;
 }
 
-export const GoldenBowl: React.FC<GoldenBowlProps> = ({ className = '', isLarge = false }) => {
+export const GoldenBowl: React.FC<GoldenBowlProps> = ({ className = '', isLarge = false, style }) => {
   return (
     <div
+      style={style}
       className={`relative rounded-xl border-2 border-[#1e40af] bg-gradient-to-b from-[#eef2f9] to-[#dbe4f3] p-1 flex items-center justify-center shadow-md overflow-hidden ${
         isLarge ? 'w-32 h-32 sm:w-36 sm:h-36' : 'w-14 h-14 sm:w-16 sm:h-16'
       } ${className}`}

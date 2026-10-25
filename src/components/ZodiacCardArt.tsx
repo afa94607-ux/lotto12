@@ -324,6 +324,8 @@ interface ZodiacCardProps {
   isLarge?: boolean;
   isFinalResult?: boolean;
   className?: string;
+  style?: React.CSSProperties;
+  numberStyle?: React.CSSProperties;
 }
 
 export const ZodiacCard: React.FC<ZodiacCardProps> = ({
@@ -331,6 +333,8 @@ export const ZodiacCard: React.FC<ZodiacCardProps> = ({
   isLarge = false,
   isFinalResult = false,
   className = '',
+  style,
+  numberStyle,
 }) => {
   const item = ZODIAC_ITEMS.find((z) => z.number === num);
   if (!item) return null;
@@ -346,7 +350,7 @@ export const ZodiacCard: React.FC<ZodiacCardProps> = ({
           ? 'border-yellow-400 ring-4 ring-yellow-400/50 shadow-xl shadow-yellow-500/40 animate-pulse'
           : 'border-[#ccbe9b]'
       } ${className}`}
-      style={{ backgroundColor: '#fef8dc' }}
+      style={{ backgroundColor: '#fef8dc', ...style }}
     >
       {/* Top Left: Animal Name in Khmer */}
       <div className="flex items-start justify-between w-full">
@@ -364,10 +368,13 @@ export const ZodiacCard: React.FC<ZodiacCardProps> = ({
       {/* Bottom: Number & 11 Payout in the card's authentic color */}
       <div className="flex items-end justify-between w-full mt-auto">
         <span
-          className="font-black font-sans leading-none tracking-tight"
+          className="font-black font-sans leading-none tracking-tight inline-block"
           style={{
             color: colorHex,
-            fontSize: isLarge ? '44px' : '20px',
+            fontSize: isLarge ? '60px' : '28px',
+            lineHeight: isLarge ? '56px' : '28px',
+            height: isLarge ? '52px' : '26px',
+            ...numberStyle,
           }}
         >
           {item.number}
@@ -376,7 +383,7 @@ export const ZodiacCard: React.FC<ZodiacCardProps> = ({
           className="font-black font-sans leading-none"
           style={{
             color: colorHex,
-            fontSize: isLarge ? '18px' : '11px',
+            fontSize: isLarge ? '22px' : '13px',
           }}
         >
           11

@@ -34,6 +34,7 @@ export interface PlacedBet {
   multiplier: number;
   timestamp: string;
   roundId: string;
+  notes?: string;
 }
 
 export interface BetSlipRecord {
@@ -54,6 +55,8 @@ export interface BetSlipRecord {
   winningNumber?: number;
   wonAnimal?: string;
   timestamp?: number;
+  notes?: string;
+  deletedFromHistory?: boolean;
 }
 
 export interface RoundResult {

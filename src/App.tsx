@@ -9,12 +9,53 @@ import { WinModal } from './components/WinModal';
 import { BettingModal, BetModalTarget } from './components/BettingModal';
 import { ZODIAC_ITEMS, INITIAL_PAST_RESULTS } from './data/zodiac';
 import { BetCategory, BetSlipRecord, PlacedBet, RoundResult } from './types/yuki';
-import { sound } from './utils/audio';
+import { sound, KHMER_COUNTDOWN_MAP, KHMER_GOODLUCK_MESSAGE } from './utils/audio';
+import { HotColdAnalytics } from './components/HotColdAnalytics';
+import { ResultsTableOfficial } from './components/ResultsTableOfficial';
+import { OwnerWinLossReport } from './components/OwnerWinLossReport';
+import { Volume2 } from 'lucide-react';
 
-const OFFICIAL_CYCLE_SECONDS = 180; // 3 minutes
-const FAST_CYCLE_SECONDS = 15; // 15 seconds for rapid testing
+const OFFICIAL_CYCLE_SECONDS = 180; // Strictly 3 minutes (180 seconds) per draw
 
 const INITIAL_SEED_SLIPS: BetSlipRecord[] = [
+  {
+    id: 'seed-slip-ex-1',
+    ticketNumber: '444444465',
+    roundId: '1989#195',
+    date: '2026-10-23',
+    time: '21:31:20',
+    category: 'number',
+    targetNumber: 7,
+    label: 'លេខ 7 (មមី)',
+    displayTarget: 'លេខ 7 (មមី)',
+    stake: 1000,
+    multiplier: 11,
+    potentialPayback: 11000,
+    result: 'won',
+    payout: 11000,
+    winningNumber: 7,
+    wonAnimal: 'មមី',
+    timestamp: Date.now() - 180000,
+  },
+  {
+    id: 'seed-slip-ex-2',
+    ticketNumber: '444444465',
+    roundId: '1989#195',
+    date: '2026-10-23',
+    time: '21:31:20',
+    category: 'number',
+    targetNumber: 3,
+    label: 'លេខ 3 (ខាល)',
+    displayTarget: 'លេខ 3 (ខាល)',
+    stake: 1000,
+    multiplier: 11,
+    potentialPayback: 11000,
+    result: 'lost',
+    payout: 0,
+    winningNumber: 7,
+    wonAnimal: 'មមី',
+    timestamp: Date.now() - 180000,
+  },
   {
     id: 'seed-slip-1',
     ticketNumber: '444444463',
@@ -94,9 +135,12 @@ const INITIAL_SEED_SLIPS: BetSlipRecord[] = [
 const loadSavedBetSlips = (): BetSlipRecord[] => {
   try {
     const saved = localStorage.getItem('yuki_bet_history');
-    if (saved) {
+    if (saved !== null) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
+        if (!parsed.some((s: BetSlipRecord) => s.id === 'seed-slip-ex-1')) {
+          return [INITIAL_SEED_SLIPS[0], INITIAL_SEED_SLIPS[1], ...parsed];
+        }
         return parsed;
       }
     }
@@ -206,16 +250,200 @@ export default function App() {
     }
   }, [betSlips]);
 
-  // Game Engine & Timer State
-  const [fastMode, setFastMode] = useState<boolean>(false);
-  const cycleDuration = fastMode ? FAST_CYCLE_SECONDS : OFFICIAL_CYCLE_SECONDS;
-  const [countdownSeconds, setCountdownSeconds] = useState<number>(cycleDuration);
+  // Game Engine & Timer State: Strictly 3 minutes (180 seconds) per round
+  const cycleDuration = OFFICIAL_CYCLE_SECONDS;
+  const [countdownSeconds, setCountdownSeconds] = useState<number>(OFFICIAL_CYCLE_SECONDS);
+  const lastDrawExecutedAtRef = useRef<number>(0);
+  const lastDrawCompletedAtRef = useRef<number>(0);
+  const completedRoundKeysRef = useRef<Set<string>>(new Set());
   const [currentRoundNumber, setCurrentRoundNumber] = useState<number>(195);
+  const [todayDate, setTodayDate] = useState<string>('2026-10-24');
+  const [availableDates, setAvailableDates] = useState<string[]>(['2026-10-24', '2026-10-18']);
+  const [selectedHistoryDate, setSelectedHistoryDate] = useState<string>('all');
+  const totalDayRounds = 480;
+
+  const loadSavedPastResults = (): RoundResult[] => {
+    try {
+      const saved = localStorage.getItem('yuki_past_results');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return INITIAL_PAST_RESULTS;
+  };
+
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
+  const isDrawingRef = useRef<boolean>(false);
   const [winningResult, setWinningResult] = useState<RoundResult | null>(null);
   const [activeDrawSequence, setActiveDrawSequence] = useState<ActiveDrawSequence | null>(null);
-  const [lastFinalResult, setLastFinalResult] = useState<RoundResult | null>(INITIAL_PAST_RESULTS[0]);
-  const [pastResults, setPastResults] = useState<RoundResult[]>(INITIAL_PAST_RESULTS);
+  const [pastResults, setPastResults] = useState<RoundResult[]>(loadSavedPastResults);
+  const [lastFinalResult, setLastFinalResult] = useState<RoundResult | null>(() => {
+    const initialList = loadSavedPastResults();
+    return initialList[0] || INITIAL_PAST_RESULTS[0];
+  });
+
+  // Keep isDrawingRef synchronized with isDrawing
+  useEffect(() => {
+    isDrawingRef.current = isDrawing;
+  }, [isDrawing]);
+
+  // 24/7 Engine Synchronizer: Sync with server authoritative state across all devices and reloads
+  useEffect(() => {
+    let isMounted = true;
+
+    const syncServerGameState = async () => {
+      // Do not sync game state during active local draw animation
+      if (isDrawingRef.current) return;
+
+      try {
+        const res = await fetch('/api/game-state');
+        if (res.ok && isMounted && !isDrawingRef.current) {
+          const state = await res.json();
+          if (state.dateStr) setTodayDate(state.dateStr);
+          if (state.roundNumber) setCurrentRoundNumber(state.roundNumber);
+          if (state.system24_7?.availableDates) {
+            setAvailableDates(state.system24_7.availableDates);
+          }
+
+          const roundKey = `${state.dateStr}__${state.roundId}`;
+
+          // Synchronize countdown timer strictly with server authoritative 180-second clock
+          if (typeof state.secondsRemaining === 'number') {
+            setCountdownSeconds((prev) => {
+              if (Math.abs(prev - state.secondsRemaining) > 2) {
+                return state.secondsRemaining;
+              }
+              return prev;
+            });
+          }
+
+          // A round result appears strictly ONLY ONCE per 3 minutes!
+          // If already drawn or revealed on this client, NEVER re-trigger!
+          if (
+            state.isDrawing &&
+            state.activeDrawSequence &&
+            !isDrawingRef.current &&
+            !completedRoundKeysRef.current.has(roundKey)
+          ) {
+            completedRoundKeysRef.current.add(roundKey);
+            setActiveDrawSequence(state.activeDrawSequence);
+            setWinningResult(state.activeDrawSequence.finalResult);
+            isDrawingRef.current = true;
+            setIsDrawing(true);
+          }
+
+          if (state.lastFinalResult && (!lastFinalResult || lastFinalResult.roundId !== state.lastFinalResult.roundId)) {
+            setLastFinalResult(state.lastFinalResult);
+          }
+        }
+      } catch {
+        // Continue smoothly with local loop
+      }
+    };
+
+    const syncHistoryList = async () => {
+      // Do not overwrite or save history while a draw is in progress!
+      // This ensures old results are not saved before the new ones have been entered.
+      if (isDrawingRef.current) return;
+
+      try {
+        const res = await fetch('/api/results');
+        if (res.ok && isMounted && !isDrawingRef.current) {
+          const data = await res.json();
+          if (Array.isArray(data.results) && data.results.length > 0) {
+            setPastResults((prev) => {
+              const map = new Map<string, RoundResult>();
+              data.results.forEach((r: RoundResult) => map.set(`${r.drawDate || ''}_${r.roundId}`, r));
+              prev.forEach((r) => {
+                const key = `${r.drawDate || ''}_${r.roundId}`;
+                if (!map.has(key)) map.set(key, r);
+              });
+              const merged = Array.from(map.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+              try {
+                localStorage.setItem('yuki_past_results', JSON.stringify(merged));
+              } catch {}
+              return merged;
+            });
+          }
+          if (Array.isArray(data.availableDates)) {
+            setAvailableDates(data.availableDates);
+          }
+          if (data.todayDate) {
+            setTodayDate(data.todayDate);
+          }
+        }
+      } catch {}
+    };
+
+    const syncBetHistory = async () => {
+      try {
+        const res = await fetch('/api/bets');
+        if (res.ok && isMounted) {
+          const data = await res.json();
+          if (Array.isArray(data.bets)) {
+            if (data.bets.length === 0) {
+              setBetSlips((prev) => {
+                if (prev.length === 0) return prev;
+                try {
+                  localStorage.setItem('yuki_bet_history', JSON.stringify([]));
+                } catch {}
+                return [];
+              });
+            } else {
+              setBetSlips((prev) => {
+                const map = new Map<string, BetSlipRecord>();
+                data.bets.forEach((b: BetSlipRecord) => map.set(b.id, b));
+                // Only merge unsaved pending local bets from current session
+                prev.forEach((b) => {
+                  if (!map.has(b.id) && b.result === 'pending') {
+                    map.set(b.id, b);
+                    fetch('/api/bets', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ bet: b }),
+                    }).catch(() => {});
+                  }
+                });
+                const merged = Array.from(map.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                try {
+                  localStorage.setItem('yuki_bet_history', JSON.stringify(merged));
+                } catch {}
+                return merged;
+              });
+            }
+          }
+        }
+      } catch {}
+    };
+
+    syncServerGameState();
+    syncHistoryList();
+    syncBetHistory();
+
+    // 24/7 background sync interval every 3 seconds
+    const interval = setInterval(() => {
+      syncServerGameState();
+      syncHistoryList();
+      syncBetHistory();
+    }, 3000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [isDrawing]);
+
+  // Save past results to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('yuki_past_results', JSON.stringify(pastResults));
+    } catch {
+      // ignore
+    }
+  }, [pastResults]);
 
   const roundId = `1989#${currentRoundNumber}`;
 
@@ -240,21 +468,54 @@ export default function App() {
     sound.enabled = next;
   };
 
-  // Switch between fast demo mode and official 3-minute mode
-  useEffect(() => {
-    setCountdownSeconds((prev) => Math.min(prev, fastMode ? FAST_CYCLE_SECONDS : OFFICIAL_CYCLE_SECONDS));
-  }, [fastMode]);
-
   // 1. Start the 3-minute draw sequence (Line 1: 6 numbers, Line 2: 5 numbers, Line 3: 1 final winning number)
-  const executeDraw = (customNumber?: number) => {
-    if (isDrawing) return;
+  // STRICT RULE: A new result is generated once every 3 minutes.
+  // After a result has been released, you must wait another 3 minutes before you can obtain a new one.
+  // Exactly 1 result per 3 minutes!
+  const executeDraw = async () => {
+    if (isDrawing || isDrawingRef.current) return;
 
-    // Determine the 1 final winning number (1-12)
-    const winNum = customNumber || Math.floor(Math.random() * 12) + 1;
-    const zodiacItem = ZODIAC_ITEMS.find((z) => z.number === winNum)!;
+    const currentRoundKey = `${todayDate}__${roundId}`;
+    if (completedRoundKeysRef.current.has(currentRoundKey)) {
+      console.log('Strict 3-minute rule: this round has already been drawn.');
+      return;
+    }
+
+    // Strict 3-minute lock: must wait at least 160 seconds after previous draw completed
+    const currentTimeMs = Date.now();
+    if (lastDrawCompletedAtRef.current > 0 && currentTimeMs - lastDrawCompletedAtRef.current < 160000) {
+      console.log('Strict 3-minute rule: must wait another 3 minutes before obtaining a new result.');
+      return;
+    }
+    completedRoundKeysRef.current.add(currentRoundKey);
+    lastDrawExecutedAtRef.current = currentTimeMs;
+    isDrawingRef.current = true;
+
+    // First attempt to trigger/get authoritative synchronized draw from server
+    try {
+      const res = await fetch('/api/draw-now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.drawSequence && data.result) {
+          setActiveDrawSequence(data.drawSequence);
+          setWinningResult(data.result);
+          setIsDrawing(true);
+          return;
+        }
+      }
+    } catch {
+      // Fallback to local RNG if network disconnected
+    }
+
+    // Local Fallback: Determine the 1 final winning number (1-12)
+    const winNum = Math.floor(Math.random() * 12) + 1;
+    const zodiacItem = ZODIAC_ITEMS.find((z) => z.number === winNum) || ZODIAC_ITEMS[0];
 
     const now = new Date();
-    const drawDate = now.toISOString().split('T')[0];
+    const drawDate = todayDate || now.toISOString().split('T')[0];
     const drawTime = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
     const finalResult: RoundResult = {
@@ -270,7 +531,6 @@ export default function App() {
       timestamp: Date.now(),
     };
 
-    // Prepare candidate numbers: remaining 11 numbers shuffled across Line 1 (6) and Line 2 (5)
     const allOthers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].filter((n) => n !== winNum);
     const shuffledOthers = [...allOthers].sort(() => Math.random() - 0.5);
 
@@ -286,59 +546,76 @@ export default function App() {
   };
 
   // 2. Triggered when Side2BowlArena completes revealing Line 3 (the 1 final winning number)
-  // Ensures 100% synchronization between the revealed card, bet history, bead road, and payouts!
+  // Ensures that the result history is saved ONLY AFTER the new results have been updated.
+  // Old results are NOT saved before the new ones have been entered.
   const handleRevealComplete = () => {
     if (!activeDrawSequence) return;
     const finalResult = activeDrawSequence.finalResult;
     const winNum = finalResult.number;
-    const zodiacItem = ZODIAC_ITEMS.find((z) => z.number === winNum)!;
+    const zodiacItem = ZODIAC_ITEMS.find((z) => z.number === winNum) || ZODIAC_ITEMS[0];
 
-    // Resolve Active Bets and update pending betSlips for this round
+    // Mark as permanently completed for this round to prevent any duplicate reveal
+    const roundKey = `${finalResult.drawDate}__${finalResult.roundId}`;
+    completedRoundKeysRef.current.add(roundKey);
+
+    // =========================================================================
+    // SEQUENCE STEP 1: Update the NEW RESULTS in state first!
+    // =========================================================================
+
+    // 1a. Calculate winning payouts and resolve all pending bet slips for this round with the new result
     let roundWonAmount = 0;
+    const updatedBetSlips = betSlips.map((slip) => {
+      if (slip.roundId === roundId && slip.result === 'pending') {
+        let isWon = false;
 
-    setBetSlips((prevSlips) =>
-      prevSlips.map((slip) => {
-        if (slip.roundId === roundId && slip.result === 'pending') {
-          let isWon = false;
-
-          if (slip.category === 'number' && slip.targetNumber === winNum) {
-            isWon = true; // 11x Payout
-          } else if (slip.category === 'small' && winNum <= 6) {
-            isWon = true; // 1.95x
-          } else if (slip.category === 'big' && winNum >= 7) {
-            isWon = true; // 1.95x
-          } else if (slip.category === 'odd' && winNum % 2 !== 0) {
-            isWon = true; // 1.95x
-          } else if (slip.category === 'even' && winNum % 2 === 0) {
-            isWon = true; // 1.95x
-          } else if (slip.category === 'red' && zodiacItem.color === 'red') {
-            isWon = true; // 2.95x
-          } else if (slip.category === 'green' && zodiacItem.color === 'green') {
-            isWon = true; // 2.95x
-          } else if (slip.category === 'blue' && zodiacItem.color === 'blue') {
-            isWon = true; // 2.95x
-          }
-
-          const potentialPayback = Math.round(slip.stake * slip.multiplier);
-          const payout = isWon ? potentialPayback : 0;
-          if (isWon) {
-            roundWonAmount += payout;
-          }
-
-          return {
-            ...slip,
-            result: isWon ? 'won' : 'lost',
-            payout,
-            potentialPayback,
-            winningNumber: winNum,
-            wonAnimal: zodiacItem.khmerName,
-          };
+        if (slip.category === 'number' && slip.targetNumber === winNum) {
+          isWon = true; // 11x Payout
+        } else if (slip.category === 'small' && winNum <= 6) {
+          isWon = true; // 1.95x
+        } else if (slip.category === 'big' && winNum >= 7) {
+          isWon = true; // 1.95x
+        } else if (slip.category === 'odd' && winNum % 2 !== 0) {
+          isWon = true; // 1.95x
+        } else if (slip.category === 'even' && winNum % 2 === 0) {
+          isWon = true; // 1.95x
+        } else if (slip.category === 'red' && zodiacItem.color === 'red') {
+          isWon = true; // 2.95x
+        } else if (slip.category === 'green' && zodiacItem.color === 'green') {
+          isWon = true; // 2.95x
+        } else if (slip.category === 'blue' && zodiacItem.color === 'blue') {
+          isWon = true; // 2.95x
         }
-        return slip;
-      })
-    );
 
-    // Credit financial balance if won
+        const potentialPayback = Math.round(slip.stake * slip.multiplier);
+        const payout = isWon ? potentialPayback : 0;
+        if (isWon) {
+          roundWonAmount += payout;
+        }
+
+        return {
+          ...slip,
+          result: isWon ? ('won' as const) : ('lost' as const),
+          payout,
+          potentialPayback,
+          winningNumber: winNum,
+          wonAnimal: zodiacItem.khmerName,
+        };
+      }
+      return slip;
+    });
+
+    // Apply updated slips to state and permanently persist
+    setBetSlips(updatedBetSlips);
+    try {
+      localStorage.setItem('yuki_bet_history', JSON.stringify(updatedBetSlips));
+    } catch {}
+    fetch('/api/bets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ allBets: updatedBetSlips }),
+    }).catch(() => {});
+
+    // 1b. Credit financial balance if won
     if (roundWonAmount > 0) {
       setBalance((prev) => prev + roundWonAmount);
       setLastTotalWon(roundWonAmount);
@@ -346,39 +623,149 @@ export default function App() {
       sound.playWin();
     }
 
-    // Add to historical bead road & Side 1 recent results
-    setPastResults((prev) => [finalResult, ...prev]);
-
-    // Save final result and reset active bets
+    // 1c. Set the newly entered result as the active and latest result in game state FIRST
+    setWinningResult(finalResult);
     setLastFinalResult(finalResult);
     setLastRoundBets(activeBets);
     setActiveBets([]);
     setStagedBets({});
-    setIsDrawing(false);
 
-    // Increment round ID and reset countdown
+    // =========================================================================
+    // SEQUENCE STEP 2: Save the result history ONLY AFTER the new results have been updated!
+    // =========================================================================
+    // Construct new history array with the verified new result at index 0.
+    // Do NOT save old results before the new ones have been entered.
+    setPastResults((prevHistory) => {
+      // Filter out any duplicate of this exact round
+      const filtered = prevHistory.filter(
+        (r) => !(r.roundId === finalResult.roundId && r.drawDate === finalResult.drawDate)
+      );
+
+      // Prepend the new result directly to the history
+      const updatedHistory = [finalResult, ...filtered];
+
+      // Immediately save the updated history (now containing the new result) to localStorage
+      try {
+        localStorage.setItem('yuki_past_results', JSON.stringify(updatedHistory));
+      } catch (err) {
+        console.error('Failed to save past results to localStorage:', err);
+      }
+
+      // Persist the new result and updated history to server storage
+      fetch('/api/results', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ result: finalResult, allResults: updatedHistory }),
+      }).catch(() => {});
+
+      return updatedHistory;
+    });
+
+    // =========================================================================
+    // SEQUENCE STEP 3: Complete draw and wait another FULL 3 minutes
+    // =========================================================================
+    // After a result has been released, you must wait another 3 minutes before you can obtain a new one!
+    // Result appears strictly ONLY ONCE! Clear active sequence immediately and close bowls.
+    lastDrawCompletedAtRef.current = Date.now();
+    setActiveDrawSequence(null);
+    setIsDrawing(false);
+    isDrawingRef.current = false;
     setCurrentRoundNumber((prev) => prev + 1);
-    setCountdownSeconds(fastMode ? FAST_CYCLE_SECONDS : OFFICIAL_CYCLE_SECONDS);
+    setCountdownSeconds(OFFICIAL_CYCLE_SECONDS); // Strictly 180 seconds
   };
 
-  // Main countdown ticker loop with 10-second anticipation warning sound
+  // Reference to prevent duplicate audio plays within the same second
+  const lastSpokenSecRef = useRef<number>(-1);
+
+  // Monitor countdownSeconds to trigger Khmer audio countdown when 10 seconds remain
+  // Speak: ១០ ៩ ៨ ៧ ៦ ៥ ៤ ៣ ២ ១ សូមជូនពរឱ្យសំណាងល្អ
+  useEffect(() => {
+    if (countdownSeconds >= 1 && countdownSeconds <= 10) {
+      if (!isDrawing && lastSpokenSecRef.current !== countdownSeconds) {
+        lastSpokenSecRef.current = countdownSeconds;
+        sound.playKhmerCountdown(countdownSeconds);
+      }
+    } else if (countdownSeconds === 0) {
+      if (lastSpokenSecRef.current !== 0) {
+        lastSpokenSecRef.current = 0;
+        sound.playKhmerGoodLuck();
+      }
+    } else {
+      lastSpokenSecRef.current = countdownSeconds;
+    }
+  }, [countdownSeconds, isDrawing]);
+
+  // Main countdown ticker loop
   useEffect(() => {
     const timer = setInterval(() => {
       setCountdownSeconds((prev) => {
-        if (isDrawing) return prev;
-        if (prev <= 10 && prev > 1) {
-          sound.playCountdownWarning(prev - 1);
-        }
+        if (isDrawing || isDrawingRef.current) return prev;
         if (prev <= 1) {
           executeDraw();
-          return 0;
+          return OFFICIAL_CYCLE_SECONDS;
         }
         return prev - 1;
       });
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isDrawing, fastMode, currentRoundNumber]);
+  }, [isDrawing, currentRoundNumber]);
+
+  // Preload Khmer audio assets on mount and first user gesture to unlock browser AudioContext / HTML5 Audio
+  useEffect(() => {
+    sound.preloadKhmerAudio();
+
+    const handleFirstGesture = () => {
+      sound.preloadKhmerAudio();
+      window.removeEventListener('pointerdown', handleFirstGesture);
+      window.removeEventListener('keydown', handleFirstGesture);
+    };
+    window.addEventListener('pointerdown', handleFirstGesture);
+    window.addEventListener('keydown', handleFirstGesture);
+    return () => {
+      window.removeEventListener('pointerdown', handleFirstGesture);
+      window.removeEventListener('keydown', handleFirstGesture);
+    };
+  }, []);
+
+  // Dedicated 10-Second Khmer Voice Countdown Test Trigger
+  const [isTestingVoice, setIsTestingVoice] = useState(false);
+  const [testVoiceCount, setTestVoiceCount] = useState<number | null>(null);
+  const testVoiceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleTestKhmerVoice = () => {
+    if (isTestingVoice) return;
+    setIsTestingVoice(true);
+    sound.preloadKhmerAudio();
+
+    let sec = 10;
+    setTestVoiceCount(10);
+    sound.playKhmerCountdown(sec);
+
+    const runNext = () => {
+      sec -= 1;
+      if (sec >= 1) {
+        setTestVoiceCount(sec);
+        sound.playKhmerCountdown(sec);
+        testVoiceTimerRef.current = setTimeout(runNext, 1000);
+      } else if (sec === 0) {
+        setTestVoiceCount(0);
+        sound.playKhmerGoodLuck();
+        testVoiceTimerRef.current = setTimeout(() => {
+          setIsTestingVoice(false);
+          setTestVoiceCount(null);
+        }, 2500);
+      }
+    };
+
+    testVoiceTimerRef.current = setTimeout(runNext, 1000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (testVoiceTimerRef.current) clearTimeout(testVoiceTimerRef.current);
+    };
+  }, []);
 
   // Stage a Bet (Clicking on buttons with currently selected chip)
   const handleAddBet = (
@@ -452,7 +839,18 @@ export default function App() {
       result: 'pending',
       payout: 0,
     };
-    setBetSlips((prev) => [newSlip, ...prev]);
+    setBetSlips((prev) => {
+      const next = [newSlip, ...prev];
+      try {
+        localStorage.setItem('yuki_bet_history', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+    fetch('/api/bets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bet: newSlip }),
+    }).catch(() => {});
   };
 
   // Open the authentic modal from photo
@@ -462,7 +860,7 @@ export default function App() {
   };
 
   // Confirm bet placed through the yellow chips modal
-  const handleConfirmModalBet = (amount: number, target: BetModalTarget) => {
+  const handleConfirmModalBet = (amount: number, target: BetModalTarget, notes?: string) => {
     if (balance < amount) {
       alert(lang === 'km' ? 'សមតុល្យមិនគ្រប់គ្រាន់ទេ!' : 'Insufficient balance!');
       return;
@@ -525,8 +923,43 @@ export default function App() {
       potentialPayback,
       result: 'pending',
       payout: 0,
+      notes: notes || undefined,
     };
-    setBetSlips((prev) => [newSlip, ...prev]);
+    setBetSlips((prev) => {
+      const next = [newSlip, ...prev];
+      try {
+        localStorage.setItem('yuki_bet_history', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+    fetch('/api/bets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bet: newSlip }),
+    }).catch(() => {});
+  };
+
+  // Update notes on an existing placed bet slip (works in Bet Slips History & Win/Loss report)
+  const handleUpdateSlipNotes = (slipId: string, notes: string) => {
+    const trimmed = notes.trim();
+    setBetSlips((prev) => {
+      const next = prev.map((s) => (s.id === slipId ? { ...s, notes: trimmed || undefined } : s));
+      try {
+        localStorage.setItem('yuki_bet_history', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    fetch('/api/bets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        bet: {
+          id: slipId,
+          notes: trimmed || undefined,
+        },
+      }),
+    }).catch(() => {});
   };
 
   // Clear Staged Bets
@@ -607,7 +1040,18 @@ export default function App() {
       result: 'pending',
       payout: 0,
     }));
-    setBetSlips((prev) => [...rebetSlips, ...prev]);
+    setBetSlips((prev) => {
+      const next = [...rebetSlips, ...prev];
+      try {
+        localStorage.setItem('yuki_bet_history', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+    fetch('/api/bets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ allBets: rebetSlips }),
+    }).catch(() => {});
 
     sound.playChip();
   };
@@ -629,11 +1073,68 @@ export default function App() {
     setBalance(200000);
   };
 
-  // Clear bet history if user explicitly requests
-  const handleClearBetHistory = () => {
-    setBetSlips([]);
+  // Delete individual bet slip from Bet Slips History: cannot be retrieved/restored in History, preserved on Win/Loss
+  const handleDeleteSlipFromHistory = (slipId: string) => {
+    let updatedSlips: BetSlipRecord[] = [];
+    setBetSlips((prev) => {
+      updatedSlips = prev.map((s) => (s.id === slipId ? { ...s, deletedFromHistory: true } : s));
+      try {
+        localStorage.setItem('yuki_bet_history', JSON.stringify(updatedSlips));
+      } catch {}
+      return updatedSlips;
+    });
+
+    fetch('/api/bets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        bet: {
+          id: slipId,
+          deletedFromHistory: true,
+        },
+      }),
+    }).catch(() => {});
+  };
+
+  // Delete entire ticket from Bet Slips History: cannot be retrieved/restored in History, preserved on Win/Loss
+  const handleDeleteTicketFromHistory = (ticketNumber: string) => {
+    let updatedSlips: BetSlipRecord[] = [];
+    setBetSlips((prev) => {
+      updatedSlips = prev.map((s) =>
+        s.ticketNumber === ticketNumber ? { ...s, deletedFromHistory: true } : s
+      );
+      try {
+        localStorage.setItem('yuki_bet_history', JSON.stringify(updatedSlips));
+      } catch {}
+      return updatedSlips;
+    });
+
+    fetch('/api/bets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        allBets: updatedSlips,
+      }),
+    }).catch(() => {});
+  };
+
+  // Clear all bet slips from History section: non-restorable in History, but 100% PRESERVED on Win/Loss page
+  const handleClearBetHistory = async () => {
+    let updatedSlips: BetSlipRecord[] = [];
+    setBetSlips((prev) => {
+      updatedSlips = prev.map((s) => ({ ...s, deletedFromHistory: true }));
+      try {
+        localStorage.setItem('yuki_bet_history', JSON.stringify(updatedSlips));
+      } catch {}
+      return updatedSlips;
+    });
+
     try {
-      localStorage.removeItem('yuki_bet_history');
+      await fetch('/api/bets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ allBets: updatedSlips }),
+      });
     } catch {
       // ignore
     }
@@ -657,6 +1158,10 @@ export default function App() {
         setLang={setLang}
         onTopUp={handleTopUp}
         roundId={roundId}
+        currentDate={todayDate}
+        roundNumber={currentRoundNumber}
+        totalDayRounds={totalDayRounds}
+        onTestVoice={handleTestKhmerVoice}
       />
 
       {/* Main Content Area: 3-Side Yuki Platform */}
@@ -676,6 +1181,10 @@ export default function App() {
                 lang={lang}
                 currentRoundId={roundId}
                 currentTimeString={currentTimeString}
+                onOpenOwnerReport={() => setActiveTab('financials')}
+                onUpdateSlipNotes={handleUpdateSlipNotes}
+                onDeleteSlip={handleDeleteSlipFromHistory}
+                onDeleteTicket={handleDeleteTicketFromHistory}
               />
             </section>
 
@@ -689,10 +1198,7 @@ export default function App() {
                 activeDrawSequence={activeDrawSequence}
                 lastFinalResult={lastFinalResult}
                 pastResults={pastResults}
-                onTriggerDrawNow={() => executeDraw()}
                 onRevealComplete={handleRevealComplete}
-                fastMode={fastMode}
-                setFastMode={setFastMode}
                 lang={lang}
               />
             </section>
@@ -720,168 +1226,66 @@ export default function App() {
             </section>
           </div>
         ) : activeTab === 'financials' ? (
-          /* Financials Full-Screen View */
-          <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-            <h2 className="text-xl font-black text-slate-800 mb-4 flex items-center justify-between">
-              <span>{lang === 'km' ? 'របាយការណ៍ហិរញ្ញវត្ថុ និងប្រវត្តិឈ្នះចាញ់' : 'Financial Statement & Bet Slips'}</span>
-              <button
-                onClick={() => setActiveTab('lottery')}
-                className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg"
-              >
-                {lang === 'km' ? 'ត្រឡប់ទៅក្ដារឆ្នោត' : 'Back to Game Board'}
-              </button>
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200">
-                <span className="text-xs text-emerald-800 font-bold block">Current Balance</span>
-                <span className="text-2xl font-black text-emerald-700 font-mono">{balance.toLocaleString()} ៛</span>
-              </div>
-              <div className="p-4 rounded-xl bg-blue-50 border border-blue-200">
-                <span className="text-xs text-blue-800 font-bold block">Total Won Payouts</span>
-                <span className="text-2xl font-black text-blue-700 font-mono">
-                  {betSlips.filter((s) => s.result === 'won').reduce((a, b) => a + b.payout, 0).toLocaleString()} ៛
-                </span>
-              </div>
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-                <span className="text-xs text-slate-600 font-bold block">Total Staked</span>
-                <span className="text-2xl font-black text-slate-800 font-mono">
-                  {betSlips.reduce((a, b) => a + b.stake, 0).toLocaleString()} ៛
-                </span>
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border border-slate-200">
-                <thead className="bg-slate-100 font-bold text-slate-700">
-                  <tr>
-                    <th className="p-2.5">Date & Time</th>
-                    <th className="p-2.5">Round ID</th>
-                    <th className="p-2.5">Betted Choice / Number</th>
-                    <th className="p-2.5">Bet Amount</th>
-                    <th className="p-2.5">Pay Back Formula</th>
-                    <th className="p-2.5">Status</th>
-                    <th className="p-2.5">Pay Back Payout</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {betSlips.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="text-center py-6 text-slate-400">
-                        No bet records yet. Place a bet on the lottery board!
-                      </td>
-                    </tr>
-                  ) : (
-                    betSlips.map((slip) => {
-                      const potential = slip.potentialPayback || Math.round(slip.stake * slip.multiplier);
-                      const display = slip.displayTarget || slip.label;
-                      return (
-                        <tr key={slip.id} className="hover:bg-slate-50">
-                          <td className="p-2.5 font-mono text-slate-600">
-                            {slip.date} {slip.time}
-                          </td>
-                          <td className="p-2.5 font-mono font-bold text-blue-700">{slip.roundId}</td>
-                          <td className="p-2.5 font-bold font-khmer text-slate-900">{display}</td>
-                          <td className="p-2.5 font-mono font-bold text-slate-800">
-                            {slip.stake.toLocaleString()} ៛
-                          </td>
-                          <td className="p-2.5 font-mono text-slate-600">
-                            {slip.stake.toLocaleString()} × {slip.multiplier} = {potential.toLocaleString()} ៛
-                          </td>
-                          <td className="p-2.5">
-                            <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                slip.result === 'won'
-                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                  : slip.result === 'lost'
-                                  ? 'bg-slate-100 text-slate-600 border border-slate-200'
-                                  : 'bg-amber-100 text-amber-800 border border-amber-300'
-                              }`}
-                            >
-                              {slip.result === 'won'
-                                ? 'ឈ្នះ (Won)'
-                                : slip.result === 'lost'
-                                ? 'ចាញ់ (Lost)'
-                                : 'រង់ចាំ (Pending)'}
-                            </span>
-                          </td>
-                          <td className="p-2.5 font-mono font-bold">
-                            {slip.result === 'won' ? (
-                              <span className="text-emerald-700">+{slip.payout.toLocaleString()} ៛</span>
-                            ) : slip.result === 'lost' ? (
-                              <span className="text-slate-400">0 ៛</span>
-                            ) : (
-                              <span className="text-amber-700">រំពឹងសង: {potential.toLocaleString()} ៛</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <OwnerWinLossReport
+            betSlips={betSlips}
+            balance={balance}
+            lang={lang}
+            onBackToGame={() => setActiveTab('lottery')}
+            availableDates={availableDates}
+            todayDate={todayDate}
+            onUpdateSlipNotes={handleUpdateSlipNotes}
+            onRefreshBets={() => {
+              fetch('/api/bets')
+                .then((r) => r.json())
+                .then((data) => {
+                  if (Array.isArray(data.bets)) {
+                    setBetSlips(data.bets);
+                    try {
+                      localStorage.setItem('yuki_bet_history', JSON.stringify(data.bets));
+                    } catch {}
+                  }
+                })
+                .catch(() => {});
+            }}
+          />
         ) : (
-          /* Past Results Table */
-          <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-            <h2 className="text-xl font-black text-slate-800 mb-4 flex items-center justify-between">
-              <span>{lang === 'km' ? 'ប្រវត្តិលទ្ធផលចេញទាំងអស់' : 'Historical Draw Results'}</span>
-              <button
-                onClick={() => setActiveTab('lottery')}
-                className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg"
-              >
-                {lang === 'km' ? 'ត្រឡប់ទៅក្ដារឆ្នោត' : 'Back to Game Board'}
-              </button>
-            </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
-              {pastResults.map((r, i) => (
-                <div key={`hist-${i}`} className="p-3 rounded-lg border border-slate-200 bg-slate-50 flex flex-col gap-1">
-                  <div className="flex items-center justify-between text-[11px] font-mono text-slate-500">
-                    <span>{r.roundId}</span>
-                    <span>{r.drawTime}</span>
-                  </div>
-                  <div className="flex items-center gap-2 my-1">
-                    <span className="text-2xl font-black text-slate-900 font-mono">#{r.number}</span>
-                    <span className="font-bold text-xs font-khmer">{r.khmerName}</span>
-                  </div>
-                  <div className="flex items-center gap-1 text-[10px] font-bold">
-                    <span className={`px-1.5 py-0.2 rounded text-white ${r.isBig ? 'bg-rose-500' : 'bg-cyan-500'}`}>
-                      {r.isBig ? 'Big' : 'Small'}
-                    </span>
-                    <span
-                      className={`px-1.5 py-0.2 rounded text-white ${
-                        r.color === 'red' ? 'bg-red-500' : r.color === 'green' ? 'bg-emerald-600' : 'bg-blue-600'
-                      }`}
-                    >
-                      {r.color}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          /* Results Tab: Matches Exact Official Screenshot Layout with 100% Platform Data Retention */
+          <ResultsTableOfficial
+            pastResults={pastResults}
+            availableDates={availableDates}
+            todayDate={todayDate}
+            lang={lang}
+            onBackToBoard={() => setActiveTab('lottery')}
+            onRefreshHistory={() => {
+              fetch('/api/results?limit=all')
+                .then((r) => r.json())
+                .then((data) => {
+                  if (Array.isArray(data.results) && data.results.length > 0) {
+                    setPastResults((prev) => {
+                      const map = new Map<string, RoundResult>();
+                      data.results.forEach((r: RoundResult) => map.set(`${r.drawDate || ''}_${r.roundId}`, r));
+                      prev.forEach((r) => {
+                        const key = `${r.drawDate || ''}_${r.roundId}`;
+                        if (!map.has(key)) map.set(key, r);
+                      });
+                      const merged = Array.from(map.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                      try {
+                        localStorage.setItem('yuki_past_results', JSON.stringify(merged));
+                      } catch {}
+                      return merged;
+                    });
+                  }
+                  if (Array.isArray(data.availableDates)) {
+                    setAvailableDates(data.availableDates);
+                  }
+                })
+                .catch(() => {});
+            }}
+          />
         )}
-      </main>
+    </main>
 
-      {/* Floating Plant & AI Assistant Quick Pill for Instant Access */}
-      <div className="fixed bottom-4 right-4 z-40 flex items-center gap-2">
-        <button
-          onClick={() => setIsPlantModalOpen(true)}
-          className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-2 rounded-full shadow-lg flex items-center gap-2 border-2 border-white transition transform hover:scale-105"
-          title="Identify plants and get care guides"
-        >
-          <span className="text-base">🌿</span>
-          <span className="text-xs hidden sm:inline">Plant Care AI</span>
-        </button>
 
-        <button
-          onClick={() => setIsChatModalOpen(true)}
-          className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-3.5 py-2 rounded-full shadow-lg flex items-center gap-2 border-2 border-white transition transform hover:scale-105"
-          title="Open Gemini chatbot"
-        >
-          <span className="text-base">🤖</span>
-          <span className="text-xs">FloraBot</span>
-        </button>
-      </div>
 
       {/* Modals */}
       <PlantCareModal
@@ -913,6 +1317,31 @@ export default function App() {
         balance={balance}
         lang={lang}
       />
+
+      {/* Test Voice Simulation Floating Banner */}
+      {isTestingVoice && testVoiceCount !== null && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-gradient-to-r from-red-600 via-amber-600 to-red-600 text-white px-6 py-3.5 rounded-2xl shadow-2xl border-2 border-amber-300 flex items-center gap-4 animate-bounce">
+          <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-amber-200 shrink-0">
+            <Volume2 className="w-6 h-6 animate-pulse" />
+          </div>
+          <div>
+            <div className="text-[11px] font-bold text-amber-200 uppercase tracking-wide">
+              {lang === 'km' ? 'សាកល្បងសំឡេងខ្មែរ (Khmer Audio Countdown)' : 'Khmer Audio Countdown Test'}
+            </div>
+            <div className="text-base sm:text-lg font-extrabold font-khmer">
+              {testVoiceCount > 0 ? (
+                <span>
+                  រាប់ថយក្រោយ: <span className="text-yellow-300 text-2xl font-mono">{testVoiceCount}</span> ({KHMER_COUNTDOWN_MAP[testVoiceCount]?.numeral} - {KHMER_COUNTDOWN_MAP[testVoiceCount]?.word})
+                </span>
+              ) : (
+                <span className="text-yellow-200 text-lg">
+                  🎉 {KHMER_GOODLUCK_MESSAGE}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -161,8 +161,8 @@ export const BigSmallStreakRoad: React.FC<BigSmallStreakRoadProps> = ({
             <div
               className="inline-grid border border-[#bfdbfe] bg-white rounded shadow-inner"
               style={{
-                gridTemplateRows: 'repeat(6, 40px)',
-                gridTemplateColumns: `repeat(${numCols}, 40px)`,
+                gridTemplateRows: 'repeat(6, 42px)',
+                gridTemplateColumns: `repeat(${numCols}, 42px)`,
               }}
             >
               {Array.from({ length: NUM_ROWS }).map((_, rIdx) =>
@@ -175,13 +175,13 @@ export const BigSmallStreakRoad: React.FC<BigSmallStreakRoadProps> = ({
                     <div
                       key={`grid-cell-${rIdx}-${cIdx}`}
                       onClick={() => cell && onSelectRound && onSelectRound(cell)}
-                      className={`w-[40px] h-[40px] border-r border-b border-[#bfdbfe] flex items-center justify-center transition-colors relative ${
+                      className={`w-[42px] h-[42px] border-r border-b border-[#bfdbfe] flex items-center justify-center transition-colors relative ${
                         cell ? 'cursor-pointer hover:bg-blue-50/70' : 'bg-white'
                       }`}
                     >
                       {cell && (
                         <div
-                          className={`w-[32px] h-[32px] rounded-full bg-white flex items-center justify-center font-black font-mono text-xs sm:text-sm text-slate-900 border-[3.5px] transition-transform hover:scale-115 relative shadow-xs ${
+                          className={`w-[36px] h-[36px] rounded-full bg-white flex items-center justify-center font-black font-mono leading-none text-slate-900 border-[3.5px] transition-transform hover:scale-115 relative shadow-xs ${
                             cell.isBig
                               ? 'border-[#f43f5e]' // Pink/Magenta ring for Big (7-12)
                               : 'border-[#0ea5e9]' // Cyan/Sky ring for Small (1-6)
@@ -192,6 +192,7 @@ export const BigSmallStreakRoad: React.FC<BigSmallStreakRoadProps> = ({
                               ? 'ring-2 ring-amber-400 ring-offset-1 animate-pulse'
                               : ''
                           }`}
+                          style={{ fontSize: '20px' }}
                           title={`Round: ${cell.roundId}\nTime: ${cell.drawTime}\n#${cell.number} (${cell.khmerName})\n${cell.isBig ? 'Big ធំ' : 'Small តូច'}`}
                         >
                           {cell.number}
@@ -268,7 +269,7 @@ export const BigSmallStreakRoad: React.FC<BigSmallStreakRoadProps> = ({
                         title={`Round: ${r.roundId}\n#${r.number} (${r.isBig ? 'Big ធំ' : 'Small តូច'})`}
                       >
                         <div
-                          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white flex items-center justify-center font-black text-sm sm:text-base font-mono border-[3.5px] shadow-sm transition-all transform group-hover:scale-110 relative text-slate-900 ${
+                          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white flex items-center justify-center font-black leading-none font-mono border-[3.5px] shadow-sm transition-all transform group-hover:scale-110 relative text-slate-900 ${
                             r.isBig ? 'border-[#f43f5e]' : 'border-[#0ea5e9]'
                           } ${
                             isSelected
@@ -277,6 +278,7 @@ export const BigSmallStreakRoad: React.FC<BigSmallStreakRoadProps> = ({
                               ? 'ring-3 ring-amber-400 ring-offset-1 animate-pulse'
                               : ''
                           }`}
+                          style={{ fontSize: '20px' }}
                         >
                           {r.number}
                           {isLatest && (

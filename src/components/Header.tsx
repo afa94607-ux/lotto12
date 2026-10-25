@@ -1,5 +1,5 @@
 import React from 'react';
-import { RefreshCw, Volume2, VolumeX, Sparkles, Sprout, Bot, HelpCircle, Wallet } from 'lucide-react';
+import { RefreshCw, Volume2, VolumeX, Sparkles, HelpCircle, Wallet } from 'lucide-react';
 import { sound } from '../utils/audio';
 
 interface HeaderProps {
@@ -15,6 +15,10 @@ interface HeaderProps {
   setLang: (l: 'km' | 'en') => void;
   onTopUp: () => void;
   roundId: string;
+  currentDate?: string;
+  roundNumber?: number;
+  totalDayRounds?: number;
+  onTestVoice?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -30,6 +34,10 @@ export const Header: React.FC<HeaderProps> = ({
   setLang,
   onTopUp,
   roundId,
+  currentDate,
+  roundNumber,
+  totalDayRounds = 480,
+  onTestVoice,
 }) => {
   return (
     <header className="w-full bg-[#2c5cb7] text-white shadow-md select-none">
@@ -47,9 +55,6 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="text-[10px] font-semibold bg-amber-400 text-blue-950 px-1.5 py-0.5 rounded-full uppercase">
                   Live
                 </span>
-              </div>
-              <div className="text-[11px] text-blue-200 font-khmer leading-none mt-0.5">
-                វេទិកាឆ្នោត យូគី ១២ & FloraBot
               </div>
             </div>
           </div>
@@ -86,14 +91,6 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <span>{lang === 'km' ? 'លទ្ធផល' : 'Results'}</span>
             </button>
-            <button
-              onClick={openPlantModal}
-              className="px-3 py-1.5 rounded text-xs sm:text-sm font-bold bg-emerald-500 hover:bg-emerald-400 text-white transition-all flex items-center gap-1.5 shadow-sm ml-1"
-              title="Identify plants and get care guides"
-            >
-              <Sprout className="w-3.5 h-3.5" />
-              <span>{lang === 'km' ? 'រុក្ខជាតិ & AI' : 'Plant AI'}</span>
-            </button>
           </nav>
         </div>
 
@@ -119,22 +116,25 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </div>
 
-          {/* AI Chatbot Launcher */}
-          <button
-            onClick={openChatModal}
-            className="flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold px-3 py-1.5 rounded-lg shadow transition"
-          >
-            <Bot className="w-3.5 h-3.5" />
-            <span>FloraBot AI</span>
-          </button>
+          {/* Test Voice Countdown */}
+          {onTestVoice && (
+            <button
+              onClick={onTestVoice}
+              className="bg-amber-400 hover:bg-amber-300 text-blue-950 px-2 py-1 rounded text-[11px] font-extrabold flex items-center gap-1 shadow transition cursor-pointer"
+              title="សាកល្បងសំឡេងរាប់ថយក្រោយ ១០ វិនាទី (Test 10-Second Khmer Voice Countdown)"
+            >
+              <Volume2 className="w-3.5 h-3.5 text-blue-950 animate-pulse" />
+              <span>{lang === 'km' ? 'សំឡេង ១០វិ' : 'Voice 10s'}</span>
+            </button>
+          )}
 
           {/* Sound Toggle */}
           <button
             onClick={toggleSound}
-            className="p-1.5 rounded hover:bg-white/10 text-blue-200 hover:text-white transition"
+            className="p-1.5 rounded hover:bg-white/10 text-blue-200 hover:text-white transition cursor-pointer"
             title={soundEnabled ? 'Mute sound' : 'Enable sound'}
           >
-            {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4 text-red-300" />}
+            {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-300" /> : <VolumeX className="w-4 h-4 text-red-300" />}
           </button>
 
           {/* Language Switch */}
@@ -148,26 +148,39 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Subheader Strip: Date, Currency & Serial as in Screenshot */}
-      <div className="bg-[#244f9c] px-3 sm:px-5 py-1 text-[11px] sm:text-xs text-blue-200 flex items-center justify-between">
+      <div className="bg-[#244f9c] px-3 sm:px-5 py-1 text-[11px] sm:text-xs text-blue-200 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 font-mono">
-          <span className="text-white font-semibold">2026-10-18 (KHR)</span>
-          <span className="text-blue-300">PPRTFFDV001</span>
-          <span className="bg-blue-900/60 text-amber-300 px-1.5 py-0.5 rounded text-[10px]">
+          <span className="text-white font-semibold flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block"></span>
+            {currentDate || '2026-10-24'} (KHR)
+          </span>
+          <span className="bg-blue-900/60 text-amber-300 px-1.5 py-0.5 rounded text-[10px] font-bold">
             {roundId}
+          </span>
+          {roundNumber && (
+            <span className="bg-emerald-950/70 text-emerald-300 px-1.5 py-0.5 rounded text-[10px] font-semibold border border-emerald-500/40">
+              {lang === 'km' ? `ជុំ ${roundNumber}/${totalDayRounds}` : `Round ${roundNumber}/${totalDayRounds}`}
+            </span>
+          )}
+          <span className="bg-blue-950/60 text-blue-200 px-1.5 py-0.5 rounded text-[10px] font-bold">
+            24/7 LIVE
           </span>
           <button
             onClick={() => window.location.reload()}
-            className="hover:text-white transition inline-flex items-center"
-            title="Refresh game data"
+            className="hover:text-white transition inline-flex items-center text-blue-300 hover:text-white"
+            title="Refresh game data from 24/7 server"
           >
             <RefreshCw className="w-3 h-3" />
           </button>
         </div>
-        <div className="flex items-center gap-4 text-blue-100">
-          <span className="hidden sm:inline">
-            {lang === 'km'
-              ? 'វេននីមួយៗ 3 នាទី | សង 11 ដងលើលេខនីមួយៗ'
-              : 'Every 3 min draw | 11x payout on single numbers'}
+        <div className="flex items-center gap-4 text-blue-100 text-[11px]">
+          <span className="flex items-center gap-1.5 bg-blue-900/40 px-2 py-0.5 rounded border border-blue-400/30">
+            <span className="text-amber-300 font-bold">⏱️ 3 នាទី/វេន:</span>
+            <span>
+              {lang === 'km'
+                ? 'លទ្ធផលថ្មីនឹងចេញរៀងរាល់ 3 នាទីម្តង (៤៨០ វេន/ថ្ងៃ) | សង ១១ដង'
+                : 'New results released every 3 minutes (480 draws/day) | 11x Payout'}
+            </span>
           </span>
         </div>
       </div>
